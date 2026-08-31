@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { useGroupRef } from 'react-resizable-panels';
 import {
   AlertCircle, Bold, Check, ChevronDown, ChevronRight, CloudUpload, File,
   Folder, FolderOpen, FolderPlus, Italic, Link, List, ListOrdered, MoreHorizontal,
@@ -14,6 +15,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { backupProject } from '@/lib/github-backup';
 import {
   addAttachments, Attachment, createChild, ensurePermission, listAttachments, loadDocument,
@@ -94,8 +96,20 @@ export default function ProjectWorkspace() {
   const editorRef = useRef<HTMLDivElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const workspaceGroupRef = useGroupRef();
 
   useEffect(() => { recentProject().then(setRecent); }, []);
+  useEffect(() => {
+    if (!root) return;
+    try {
+      const saved = localStorage.getItem('folio-tree:workspace-layout');
+      if (!saved) return;
+      const layout = JSON.parse(saved) as { tree?: number; editor?: number };
+      if (typeof layout.tree === 'number' && typeof layout.editor === 'number') {
+        workspaceGroupRef.current?.setLayout({ tree: layout.tree, editor: layout.editor });
+      }
+    } catch { /* Use the default layout when stored preferences are invalid. */ }
+  }, [root, workspaceGroupRef]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 4500);
@@ -246,8 +260,16 @@ export default function ProjectWorkspace() {
       </div>
     </header>
 
-    <section className="workspace">
-      <aside className="tree-panel">
+    <ResizablePanelGroup
+      id="folio-workspace"
+      className="workspace"
+      orientation="horizontal"
+      groupRef={workspaceGroupRef}
+      defaultLayout={{ tree: 28, editor: 72 }}
+      onLayoutChanged={(layout) => localStorage.setItem('folio-tree:workspace-layout', JSON.stringify(layout))}
+    >
+      <ResizablePanel id="tree" defaultSize="292px" minSize="220px" maxSize="520px" className="tree-resizable-panel">
+        <aside className="tree-panel">
         <div className="panel-heading"><div><p className="eyebrow">PROJECT</p><strong>{config.name}</strong></div><Button variant="ghost" size="icon-sm" aria-label="하위 항목 추가" onClick={() => openNodeAction({ kind: 'add', node: tree })}><Plus /></Button></div>
         <nav aria-label="프로젝트 항목" className="tree"><TreeItem node={tree} depth={0} selectedPath={selected.path} expanded={expanded} onSelect={selectNode} onToggle={(path) => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })} onAction={openNodeAction} /></nav>
         <div className="attachment-panel">
@@ -255,9 +277,13 @@ export default function ProjectWorkspace() {
           <input ref={attachmentInput} className="sr-only" type="file" multiple onChange={(event) => handleAttachments(event.target.files)} />
           {attachments.length === 0 ? <p>이 항목에 첨부된 파일이 없습니다.</p> : attachments.map((item) => <button key={item.name} className="attachment-row" onClick={() => openAttachment(item)}><File /><span>{item.name}<small>{formatBytes(item.size)}</small></span></button>)}
         </div>
-      </aside>
+        </aside>
+      </ResizablePanel>
 
-      <article className="editor-panel">
+      <ResizableHandle withHandle className="tree-resize-handle" aria-label="트리 영역 너비 조절" />
+
+      <ResizablePanel id="editor" minSize="460px" className="editor-resizable-panel">
+        <article className="editor-panel">
         <div className="document-head"><div><p className="breadcrumb">{selected.path ? `${config.name} / ${selected.path.split('/').join(' / ')}` : config.name}</p><h2>{selected.name}</h2></div><div className="document-actions"><Button variant="outline" size="sm" onClick={() => attachmentInput.current?.click()}><Paperclip />첨부</Button><span className="file-label">content.html</span></div></div>
         <div className="toolbar" aria-label="문서 서식">
           <select aria-label="문단 스타일" defaultValue="p" onChange={(event) => runCommand('formatBlock', event.target.value)}><option value="p">본문</option><option value="h1">제목 1</option><option value="h2">제목 2</option><option value="blockquote">인용문</option></select>
@@ -268,8 +294,9 @@ export default function ProjectWorkspace() {
         </div>
         <div className="paper-wrap"><div ref={editorRef} className="paper editable" contentEditable suppressContentEditableWarning onInput={scheduleSave} data-placeholder="이 항목의 내용을 입력하세요…" /></div>
         <footer className="editor-footer"><span>{config.lastBackupAt ? `마지막 GitHub 백업: ${new Date(config.lastBackupAt).toLocaleString('ko-KR')}` : 'GitHub 백업 기록 없음'}</span><span>첨부파일 {attachments.length}개</span></footer>
-      </article>
-    </section>
+        </article>
+      </ResizablePanel>
+    </ResizablePanelGroup>
 
     <Dialog open={!!nodeAction} onOpenChange={(open) => !open && setNodeAction(null)}><DialogContent><form onSubmit={submitNodeAction}><DialogHeader><DialogTitle>{nodeAction?.kind === 'add' ? '하위 항목 추가' : nodeAction?.kind === 'rename' ? '이름 변경' : '항목 삭제'}</DialogTitle><DialogDescription>{nodeAction?.kind === 'delete' ? `“${nodeAction.node.name}”과 모든 하위 내용 및 첨부파일을 삭제합니다.` : '트리에 표시할 이름을 입력하세요.'}</DialogDescription></DialogHeader>{nodeAction?.kind !== 'delete' && <Input className="dialog-input" autoFocus value={nodeName} onChange={(event) => setNodeName(event.target.value)} placeholder="새 항목 이름" />}<DialogFooter><Button type="button" variant="outline" onClick={() => setNodeAction(null)}>취소</Button><Button type="submit" variant={nodeAction?.kind === 'delete' ? 'destructive' : 'default'}>{nodeAction?.kind === 'delete' ? '삭제' : '확인'}</Button></DialogFooter></form></DialogContent></Dialog>
 
