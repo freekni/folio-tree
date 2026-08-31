@@ -33,11 +33,15 @@ button, select { font: inherit; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 18px; }
 .panel-heading strong { font: 600 16px Georgia, "Malgun Gothic", serif; }
 .tree { display: grid; gap: 3px; }
-.tree-row { width: 100%; height: 36px; display: grid; grid-template-columns: 18px 18px minmax(0,1fr) 18px; align-items: center; gap: 7px; border: 0; border-radius: 7px; padding: 0 8px; color: #535850; background: transparent; text-align: left; cursor: pointer; }
+.tree-row { width: 100%; height: 34px; display: grid; grid-template-columns: 16px 16px minmax(0,1fr) 16px; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 7px; padding: 0 8px; color: #535850; background: transparent; font-size: 12px; text-align: left; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 .tree-row svg { width: 15px; height: 15px; }
 .tree-row svg:last-child { opacity: 0; }
 .tree-row:hover svg:last-child { opacity: .6; }
 .tree-row.selected { color: #234531; background: #d5dfd2; font-weight: 700; }
+.tree-row[draggable="true"] { cursor: grab; }
+.tree-row[draggable="true"]:active { cursor: grabbing; }
+.tree-row.dragging { opacity: .42; }
+.tree-row.drop-target { border-color: #64806d; background: #cbd9c9; box-shadow: inset 0 0 0 1px #f8faf7; }
 .tree-toggle { width: 18px; height: 28px; display: grid; place-items: center; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-more { opacity: 0; }

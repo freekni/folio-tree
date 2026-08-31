@@ -147,6 +147,37 @@ export async function renameChild(parent: FileSystemDirectoryHandle, oldName: st
   await parent.removeEntry(oldName, { recursive: true });
 }
 
+async function directoryExists(parent: FileSystemDirectoryHandle, name: string) {
+  try {
+    await parent.getDirectoryHandle(name);
+    return true;
+  } catch (error) {
+    if ((error as DOMException).name === 'NotFoundError') return false;
+    throw error;
+  }
+}
+
+export async function moveChild(
+  sourceParent: FileSystemDirectoryHandle,
+  name: string,
+  targetParent: FileSystemDirectoryHandle,
+) {
+  if (await directoryExists(targetParent, name)) {
+    throw new Error(`“${name}” 항목이 이동할 위치에 이미 있습니다.`);
+  }
+
+  const source = await sourceParent.getDirectoryHandle(name);
+  const target = await targetParent.getDirectoryHandle(name, { create: true });
+  try {
+    await copyDirectory(source, target);
+  } catch (error) {
+    await targetParent.removeEntry(name, { recursive: true }).catch(() => undefined);
+    throw error;
+  }
+
+  await sourceParent.removeEntry(name, { recursive: true });
+}
+
 export async function listAttachments(directory: FileSystemDirectoryHandle): Promise<Attachment[]> {
   const items: Attachment[] = [];
   for await (const [name, entry] of (directory as DirectoryEntries).entries()) {
