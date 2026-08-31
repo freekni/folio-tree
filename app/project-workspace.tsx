@@ -171,6 +171,7 @@ export default function ProjectWorkspace() {
   const [todayDate] = useState(() => localDateName());
   const [todayHandle, setTodayHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [todayHtml, setTodayHtml] = useState('');
+  const [documentHtml, setDocumentHtml] = useState('');
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -218,6 +219,9 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     if (todayEditorRef.current) todayEditorRef.current.innerHTML = todayHtml;
   }, [todayHtml, root]);
+  useEffect(() => {
+    if (editorRef.current) editorRef.current.innerHTML = documentHtml;
+  }, [documentHtml, root]);
   // Re-read the current day's note after the workspace mounts. This also covers
   // reopening a remembered project where the editor DOM did not exist yet when
   // the project connection started.
@@ -254,9 +258,10 @@ export default function ProjectWorkspace() {
   const refresh = useCallback(async (directory: FileSystemDirectoryHandle, selectedPath = '') => {
     const nextTree = await readTree(directory);
     const nextSelected = findNode(nextTree, selectedPath) || nextTree;
-    setTree(nextTree); setSelected(nextSelected);
+    const html = await loadDocument(nextSelected.handle);
+    setTree(nextTree); setSelected(nextSelected); setDocumentHtml(html);
     setAttachments(await listAttachments(nextSelected.handle));
-    if (editorRef.current) editorRef.current.innerHTML = await loadDocument(nextSelected.handle);
+    if (editorRef.current) editorRef.current.innerHTML = html;
   }, []);
 
   async function connectProject(handle: FileSystemDirectoryHandle) {
@@ -391,6 +396,7 @@ export default function ProjectWorkspace() {
     await saveToday();
     setSelected(node);
     const html = await loadDocument(node.handle);
+    setDocumentHtml(html);
     if (editorRef.current) editorRef.current.innerHTML = html;
     if (node.path === todayPath && todayEditorRef.current) todayEditorRef.current.innerHTML = html;
     setAttachments(await listAttachments(node.handle));
