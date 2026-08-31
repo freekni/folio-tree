@@ -12,6 +12,9 @@ import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -20,10 +23,12 @@ import { backupProject } from '@/lib/github-backup';
 import {
   addAttachments, Attachment, createChild, ensurePermission, listAttachments, loadDocument,
   loadProjectConfig, moveChild, ProjectConfig, readTree, recentProject, rememberProject, renameChild,
-  saveDocument, saveProjectConfig, TreeNode, validNodeName,
+  saveDocument, saveProjectConfig, setChildPosition, TreeNode, validNodeName,
 } from '@/lib/project-files';
 
 type NodeAction = { kind: 'add' | 'rename' | 'delete'; node: TreeNode } | null;
+type DropPosition = 'before' | 'inside' | 'after';
+type DropTarget = { path: string; position: DropPosition } | null;
 
 function findNode(root: TreeNode | null, path: string): TreeNode | null {
   if (!root) return null;
@@ -48,11 +53,11 @@ function formatBytes(bytes: number) {
 }
 
 function TreeItem({
-  node, depth, selectedPath, expanded, draggingPath, dropTargetPath,
+  node, depth, selectedPath, expanded, draggingPath, dropTarget,
   onSelect, onToggle, onAction, onDragStart, onDragOver, onDrop, onDragEnd,
 }: {
   node: TreeNode; depth: number; selectedPath: string; expanded: Set<string>;
-  draggingPath: string | null; dropTargetPath: string | null;
+  draggingPath: string | null; dropTarget: DropTarget;
   onSelect: (node: TreeNode) => void; onToggle: (path: string) => void;
   onAction: (action: NodeAction) => void;
   onDragStart: (node: TreeNode, event: DragEvent<HTMLElement>) => void;
@@ -65,7 +70,8 @@ function TreeItem({
   return <>
     <ContextMenu>
       <ContextMenuTrigger
-        className={`tree-row ${selectedPath === node.path ? 'selected' : ''} ${draggingPath === node.path ? 'dragging' : ''} ${dropTargetPath === node.path ? 'drop-target' : ''}`}
+        render={<div />}
+        className={`tree-row ${selectedPath === node.path ? 'selected' : ''} ${draggingPath === node.path ? 'dragging' : ''} ${dropTarget?.path === node.path ? `drop-${dropTarget.position}` : ''}`}
         style={{ paddingLeft: 8 + depth * 20 }}
         onClick={() => onSelect(node)}
         draggable={depth > 0}
@@ -73,13 +79,28 @@ function TreeItem({
         onDragOver={(event) => onDragOver(node, event)}
         onDrop={(event) => onDrop(node, event)}
         onDragEnd={onDragEnd}
-        title={depth > 0 ? '드래그해서 다른 항목 아래로 이동' : undefined}
+        title={depth > 0 ? '위·아래에 놓아 순서 변경, 가운데에 놓아 하위로 이동' : undefined}
       >
         <span className="tree-toggle" onClick={(event) => { event.stopPropagation(); if (hasChildren) onToggle(node.path); }}>
           {hasChildren ? (isExpanded ? <ChevronDown /> : <ChevronRight />) : null}
         </span>
         {isExpanded && hasChildren ? <FolderOpen /> : <Folder />}
-        <span className="tree-name">{node.name}</span><MoreHorizontal className="row-more" />
+        <span className="tree-name">{node.name}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<button type="button" className="tree-more-button" aria-label={`${node.name} 메뉴`} />}
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <MoreHorizontal />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="bottom">
+            <DropdownMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</DropdownMenuItem>
+            {depth > 0 && <DropdownMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</DropdownMenuItem>}
+            {depth > 0 && <DropdownMenuSeparator />}
+            {depth > 0 && <DropdownMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</ContextMenuItem>
@@ -88,7 +109,7 @@ function TreeItem({
         {depth > 0 && <ContextMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
-    {isExpanded && node.children.map((child) => <TreeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} expanded={expanded} draggingPath={draggingPath} dropTargetPath={dropTargetPath} onSelect={onSelect} onToggle={onToggle} onAction={onAction} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />)}
+    {isExpanded && node.children.map((child) => <TreeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} onSelect={onSelect} onToggle={onToggle} onAction={onAction} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />)}
   </>;
 }
 
@@ -112,7 +133,7 @@ export default function ProjectWorkspace() {
   const [notice, setNotice] = useState<{ type: 'ok' | 'error'; message: string } | null>(null);
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
-  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -184,10 +205,24 @@ export default function ProjectWorkspace() {
     setNodeAction(action); setNodeName(action?.kind === 'rename' ? action.node.name : '');
   }
 
-  function canDropNode(sourcePath: string, targetPath: string) {
+  function dropPosition(node: TreeNode, event: DragEvent<HTMLElement>): DropPosition {
+    if (!node.path) return 'inside';
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientY - bounds.top) / bounds.height;
+    if (ratio < 0.28) return 'before';
+    if (ratio > 0.72) return 'after';
+    return 'inside';
+  }
+
+  function destinationParentPath(targetPath: string, position: DropPosition) {
+    return position === 'inside' ? targetPath : parentPath(targetPath);
+  }
+
+  function canDropNode(sourcePath: string, targetPath: string, position: DropPosition) {
     if (!sourcePath || sourcePath === targetPath) return false;
-    if (targetPath.startsWith(`${sourcePath}/`)) return false;
-    if (parentPath(sourcePath) === targetPath) return false;
+    const destinationPath = destinationParentPath(targetPath, position);
+    if (destinationPath === sourcePath || destinationPath.startsWith(`${sourcePath}/`)) return false;
+    if (position === 'inside' && parentPath(sourcePath) === destinationPath) return false;
     return true;
   }
 
@@ -196,49 +231,67 @@ export default function ProjectWorkspace() {
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', node.path);
     setDraggingPath(node.path);
-    setDropTargetPath(null);
+    setDropTarget(null);
   }
 
   function dragOverTreeNode(node: TreeNode, event: DragEvent<HTMLElement>) {
-    if (!draggingPath || !canDropNode(draggingPath, node.path)) return;
+    event.stopPropagation();
+    const position = dropPosition(node, event);
+    if (!draggingPath || !canDropNode(draggingPath, node.path, position)) {
+      setDropTarget(null);
+      return;
+    }
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    setDropTargetPath(node.path);
+    setDropTarget({ path: node.path, position });
   }
 
   async function dropTreeNode(target: TreeNode, event: DragEvent<HTMLElement>) {
     event.preventDefault();
+    event.stopPropagation();
     const sourcePath = draggingPath || event.dataTransfer.getData('text/plain');
-    setDropTargetPath(null);
-    if (!root || !tree || !selected || !canDropNode(sourcePath, target.path)) {
+    const position = dropTarget?.path === target.path ? dropTarget.position : dropPosition(target, event);
+    setDropTarget(null);
+    if (!root || !tree || !selected || !canDropNode(sourcePath, target.path, position)) {
       setDraggingPath(null);
       return;
     }
 
     const source = findNode(tree, sourcePath);
     const sourceParent = findNode(tree, parentPath(sourcePath));
-    if (!source || !sourceParent) { setDraggingPath(null); return; }
+    const destinationPath = destinationParentPath(target.path, position);
+    const destinationParent = findNode(tree, destinationPath);
+    if (!source || !sourceParent || !destinationParent) { setDraggingPath(null); return; }
 
     try {
       await saveCurrent();
-      await moveChild(sourceParent.handle, source.name, target.handle);
-      const movedPath = target.path ? `${target.path}/${source.name}` : source.name;
+      const changesParent = sourceParent.path !== destinationParent.path;
+      if (changesParent) await moveChild(sourceParent.handle, source.name, destinationParent.handle);
+      if (position === 'before' || position === 'after') {
+        await setChildPosition(destinationParent.handle, source.name, target.name, position);
+      }
+      const movedPath = destinationParent.path ? `${destinationParent.path}/${source.name}` : source.name;
       const selectedPath = selected.path === source.path || selected.path.startsWith(`${source.path}/`)
         ? `${movedPath}${selected.path.slice(source.path.length)}`
         : selected.path;
       setExpanded((current) => {
         const next = new Set<string>();
         for (const path of current) {
-          next.add(path === source.path || path.startsWith(`${source.path}/`)
+          next.add(changesParent && (path === source.path || path.startsWith(`${source.path}/`))
             ? `${movedPath}${path.slice(source.path.length)}`
             : path);
         }
-        next.add(target.path);
+        next.add(destinationParent.path);
         next.add(movedPath);
         return next;
       });
       await refresh(root, selectedPath);
-      setNotice({ type: 'ok', message: `“${source.name}” 항목과 하위 내용을 이동했습니다.` });
+      setNotice({
+        type: 'ok',
+        message: changesParent
+          ? `“${source.name}” 항목과 하위 내용을 이동했습니다.`
+          : `“${source.name}” 항목의 순서를 변경했습니다.`,
+      });
     } catch (error) {
       setNotice({ type: 'error', message: `이동 실패: ${(error as Error).message}` });
     } finally {
@@ -248,7 +301,7 @@ export default function ProjectWorkspace() {
 
   function endTreeDrag() {
     setDraggingPath(null);
-    setDropTargetPath(null);
+    setDropTarget(null);
   }
 
   async function submitNodeAction(event: FormEvent) {
@@ -372,7 +425,7 @@ export default function ProjectWorkspace() {
       <ResizablePanel id="tree" defaultSize="292px" minSize="220px" maxSize="520px" className="tree-resizable-panel">
         <aside className="tree-panel">
         <div className="panel-heading"><div><p className="eyebrow">PROJECT</p><strong>{config.name}</strong></div><Button variant="ghost" size="icon-sm" aria-label="하위 항목 추가" onClick={() => openNodeAction({ kind: 'add', node: tree })}><Plus /></Button></div>
-        <nav aria-label="프로젝트 항목" className="tree"><TreeItem node={tree} depth={0} selectedPath={selected.path} expanded={expanded} draggingPath={draggingPath} dropTargetPath={dropTargetPath} onSelect={selectNode} onToggle={(path) => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })} onAction={openNodeAction} onDragStart={startTreeDrag} onDragOver={dragOverTreeNode} onDrop={dropTreeNode} onDragEnd={endTreeDrag} /></nav>
+        <nav aria-label="프로젝트 항목" className="tree"><TreeItem node={tree} depth={0} selectedPath={selected.path} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} onSelect={selectNode} onToggle={(path) => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })} onAction={openNodeAction} onDragStart={startTreeDrag} onDragOver={dragOverTreeNode} onDrop={dropTreeNode} onDragEnd={endTreeDrag} /></nav>
         <div className="attachment-panel">
           <div className="attachment-heading"><strong>첨부파일</strong><Button variant="ghost" size="icon-xs" aria-label="파일 첨부" onClick={() => attachmentInput.current?.click()}><Plus /></Button></div>
           <input ref={attachmentInput} className="sr-only" type="file" multiple onChange={(event) => handleAttachments(event.target.files)} />

@@ -36,6 +36,7 @@ declare global {
 
 const CONFIG_FILE = 'project.json';
 const CONTENT_FILE = 'content.html';
+const ORDER_FILE = '.folio-order.json';
 const DB_NAME = 'folio-tree';
 
 export async function ensurePermission(handle: FileSystemDirectoryHandle, request = true) {
@@ -91,10 +92,62 @@ export async function readTree(root: FileSystemDirectoryHandle): Promise<TreeNod
         children.push(await visit(entry as FileSystemDirectoryHandle, path ? `${path}/${name}` : name));
       }
     }
-    children.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    const order = await readChildOrder(handle);
+    children.sort((a, b) => {
+      const aIndex = order.indexOf(a.name);
+      const bIndex = order.indexOf(b.name);
+      if (aIndex >= 0 && bIndex >= 0) return aIndex - bIndex;
+      if (aIndex >= 0) return -1;
+      if (bIndex >= 0) return 1;
+      return a.name.localeCompare(b.name, 'ko');
+    });
     return { name: handle.name, path, handle, children };
   }
   return visit(root, '');
+}
+
+async function readChildOrder(parent: FileSystemDirectoryHandle): Promise<string[]> {
+  const raw = await readText(parent, ORDER_FILE);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((name): name is string => typeof name === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+async function childDirectoryNames(parent: FileSystemDirectoryHandle) {
+  const names: string[] = [];
+  for await (const [name, entry] of (parent as DirectoryEntries).entries()) {
+    if (entry.kind === 'directory' && !name.startsWith('.')) names.push(name);
+  }
+  return names;
+}
+
+async function orderedChildNames(parent: FileSystemDirectoryHandle) {
+  const names = await childDirectoryNames(parent);
+  const saved = await readChildOrder(parent);
+  const available = new Set(names);
+  const ordered = saved.filter((name) => available.delete(name));
+  return [...ordered, ...Array.from(available).sort((a, b) => a.localeCompare(b, 'ko'))];
+}
+
+async function writeChildOrder(parent: FileSystemDirectoryHandle, names: string[]) {
+  await writeText(parent, ORDER_FILE, `${JSON.stringify(names, null, 2)}\n`);
+}
+
+export async function setChildPosition(
+  parent: FileSystemDirectoryHandle,
+  childName: string,
+  referenceName?: string,
+  position: 'before' | 'after' | 'last' = 'last',
+) {
+  const names = (await orderedChildNames(parent)).filter((name) => name !== childName);
+  const referenceIndex = referenceName ? names.indexOf(referenceName) : -1;
+  if (referenceIndex < 0 || position === 'last') names.push(childName);
+  else names.splice(referenceIndex + (position === 'after' ? 1 : 0), 0, childName);
+  await writeChildOrder(parent, names);
 }
 
 export async function loadDocument(directory: FileSystemDirectoryHandle) {
@@ -119,6 +172,7 @@ export async function saveDocument(directory: FileSystemDirectoryHandle, title: 
 export async function createChild(parent: FileSystemDirectoryHandle, name: string) {
   const child = await parent.getDirectoryHandle(name, { create: true });
   await saveDocument(child, name, '');
+  await setChildPosition(parent, name);
   return child;
 }
 
@@ -141,10 +195,12 @@ async function copyDirectory(source: FileSystemDirectoryHandle, target: FileSyst
 }
 
 export async function renameChild(parent: FileSystemDirectoryHandle, oldName: string, newName: string) {
+  const previousOrder = await orderedChildNames(parent);
   const source = await parent.getDirectoryHandle(oldName);
   const target = await parent.getDirectoryHandle(newName, { create: true });
   await copyDirectory(source, target);
   await parent.removeEntry(oldName, { recursive: true });
+  await writeChildOrder(parent, previousOrder.map((name) => name === oldName ? newName : name));
 }
 
 async function directoryExists(parent: FileSystemDirectoryHandle, name: string) {
@@ -176,6 +232,8 @@ export async function moveChild(
   }
 
   await sourceParent.removeEntry(name, { recursive: true });
+  await writeChildOrder(sourceParent, await orderedChildNames(sourceParent));
+  await setChildPosition(targetParent, name);
 }
 
 export async function listAttachments(directory: FileSystemDirectoryHandle): Promise<Attachment[]> {
