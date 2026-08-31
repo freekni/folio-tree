@@ -201,6 +201,49 @@ export function localDateName(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function dailyDateParts(dateName: string) {
+  return { year: dateName.slice(0, 4), month: dateName.slice(0, 7) };
+}
+
+export function dailyNotePath(dateName: string) {
+  const { year, month } = dailyDateParts(dateName);
+  return `${DAILY_NOTES_FOLDER}/${year}/${month}/${dateName}`;
+}
+
+export async function findDailyNote(root: FileSystemDirectoryHandle, dateName: string) {
+  const { year, month } = dailyDateParts(dateName);
+  const dailyFolder = await childDirectory(root, DAILY_NOTES_FOLDER);
+  if (!dailyFolder) return null;
+  const yearFolder = await childDirectory(dailyFolder, year);
+  if (!yearFolder) return null;
+  const monthFolder = await childDirectory(yearFolder, month);
+  if (!monthFolder) return null;
+  return childDirectory(monthFolder, dateName);
+}
+
+export async function ensureDailyMonthFolder(root: FileSystemDirectoryHandle, dateName: string) {
+  const { year, month } = dailyDateParts(dateName);
+  const dailyFolder = await ensureDailyNotesFolder(root);
+  const yearFolder = await childDirectory(dailyFolder, year) || await createChild(dailyFolder, year);
+  return await childDirectory(yearFolder, month) || await createChild(yearFolder, month);
+}
+
+export async function organizeDailyNotes(root: FileSystemDirectoryHandle) {
+  const dailyFolder = await ensureDailyNotesFolder(root);
+  const legacyDates: string[] = [];
+  for await (const [name, entry] of (dailyFolder as DirectoryEntries).entries()) {
+    if (entry.kind === 'directory' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(name)) {
+      legacyDates.push(name);
+    }
+  }
+  for (const dateName of legacyDates) {
+    const monthFolder = await ensureDailyMonthFolder(root, dateName);
+    if (!await childDirectory(monthFolder, dateName)) {
+      await moveChild(dailyFolder, dateName, monthFolder);
+    }
+  }
+}
+
 async function copyFile(source: FileSystemFileHandle, target: FileSystemDirectoryHandle, name: string) {
   const file = await source.getFile();
   const targetFile = await target.getFileHandle(name, { create: true });

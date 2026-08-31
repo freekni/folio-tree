@@ -21,10 +21,11 @@ import { Input } from '@/components/ui/input';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { backupProject } from '@/lib/github-backup';
 import {
-  addAttachments, Attachment, childDirectory, createChild, DAILY_NOTES_FOLDER, ensureDailyNotesFolder,
-  ensurePermission, listAttachments, loadDocument, loadProjectConfig, localDateName, moveChild,
-  ProjectConfig, readTree, recentProject, rememberProject, renameChild, saveDocument,
-  saveProjectConfig, setChildPosition, TreeNode, validNodeName,
+  addAttachments, Attachment, childDirectory, createChild, DAILY_NOTES_FOLDER, dailyNotePath,
+  ensureDailyMonthFolder, ensurePermission, findDailyNote, listAttachments, loadDocument,
+  loadProjectConfig, localDateName, moveChild, organizeDailyNotes, ProjectConfig, readTree,
+  recentProject, rememberProject, renameChild, saveDocument, saveProjectConfig, setChildPosition,
+  TreeNode, validNodeName,
 } from '@/lib/project-files';
 
 type NodeAction = { kind: 'add' | 'rename' | 'delete'; node: TreeNode } | null;
@@ -151,7 +152,9 @@ export default function ProjectWorkspace() {
   const todayDirty = useRef(false);
   const todayRevision = useRef(0);
   const workspaceGroupRef = useGroupRef();
-  const todayPath = `${DAILY_NOTES_FOLDER}/${todayDate}`;
+  const todayYear = todayDate.slice(0, 4);
+  const todayMonth = todayDate.slice(0, 7);
+  const todayPath = dailyNotePath(todayDate);
 
   useEffect(() => { recentProject().then(setRecent); }, []);
   useEffect(() => {
@@ -185,14 +188,22 @@ export default function ProjectWorkspace() {
   async function connectProject(handle: FileSystemDirectoryHandle) {
     if (!await ensurePermission(handle)) throw new Error('선택한 폴더에 대한 읽기·쓰기 권한이 필요합니다.');
     const nextConfig = await loadProjectConfig(handle);
-    const dailyFolder = await ensureDailyNotesFolder(handle);
-    const existingToday = await childDirectory(dailyFolder, todayDate);
+    await organizeDailyNotes(handle);
+    const existingToday = await findDailyNote(handle, todayDate);
     setTodayHandle(existingToday);
     setTodayHtml(existingToday ? await loadDocument(existingToday) : '');
     setTodaySaveState('saved');
     todayDirty.current = false;
     todayRevision.current = 0;
-    setExpanded((current) => new Set(current).add(DAILY_NOTES_FOLDER));
+    setExpanded((current) => {
+      const next = new Set(current);
+      next.add(DAILY_NOTES_FOLDER);
+      if (existingToday) {
+        next.add(`${DAILY_NOTES_FOLDER}/${todayYear}`);
+        next.add(`${DAILY_NOTES_FOLDER}/${todayYear}/${todayMonth}`);
+      }
+      return next;
+    });
     setRoot(handle); setConfig(nextConfig); setRepositoryInput(nextConfig.githubRepository); setBranchInput(nextConfig.branch);
     await rememberProject(handle); setRecent(handle); await refresh(handle);
   }
@@ -246,9 +257,9 @@ export default function ProjectWorkspace() {
     const html = todayEditorRef.current.innerHTML;
     const revisionAtSave = todayRevision.current;
     try {
-      const dailyFolder = await ensureDailyNotesFolder(root);
-      const existing = todayHandle || await childDirectory(dailyFolder, todayDate);
-      const noteHandle = existing || await createChild(dailyFolder, todayDate);
+      const monthFolder = await ensureDailyMonthFolder(root, todayDate);
+      const existing = todayHandle || await childDirectory(monthFolder, todayDate);
+      const noteHandle = existing || await createChild(monthFolder, todayDate);
       await saveDocument(noteHandle, todayDate, html);
       setTodayHandle(noteHandle);
       if (todayRevision.current === revisionAtSave) {
@@ -263,7 +274,13 @@ export default function ProjectWorkspace() {
         const nextTree = await readTree(root);
         setTree(nextTree);
         setSelected((current) => current ? findNode(nextTree, current.path) || nextTree : nextTree);
-        setExpanded((current) => new Set(current).add(DAILY_NOTES_FOLDER));
+        setExpanded((current) => {
+          const next = new Set(current);
+          next.add(DAILY_NOTES_FOLDER);
+          next.add(`${DAILY_NOTES_FOLDER}/${todayYear}`);
+          next.add(`${DAILY_NOTES_FOLDER}/${todayYear}/${todayMonth}`);
+          return next;
+        });
       }
     } catch {
       setTodaySaveState('error');
@@ -585,7 +602,7 @@ export default function ProjectWorkspace() {
               data-placeholder="오늘 확인하거나 기억할 내용을 입력하세요…"
             />
           </div>
-          <footer className="today-footer">입력한 내용은 {DAILY_NOTES_FOLDER} / {todayDate}에 자동 저장됩니다.</footer>
+          <footer className="today-footer">{DAILY_NOTES_FOLDER} / {todayYear} / {todayMonth} / {todayDate}에 자동 저장됩니다.</footer>
         </aside>
       </ResizablePanel>
     </ResizablePanelGroup>
