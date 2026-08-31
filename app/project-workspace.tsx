@@ -48,6 +48,10 @@ function parentPath(path: string) {
   return parts.join('/');
 }
 
+function expandedStorageKey(projectName: string) {
+  return `folio-tree:expanded:${encodeURIComponent(projectName)}`;
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -176,6 +180,10 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     if (todayEditorRef.current) todayEditorRef.current.innerHTML = todayHtml;
   }, [todayHtml, root]);
+  useEffect(() => {
+    if (!root) return;
+    localStorage.setItem(expandedStorageKey(root.name), JSON.stringify(Array.from(expanded)));
+  }, [expanded, root]);
 
   const refresh = useCallback(async (directory: FileSystemDirectoryHandle, selectedPath = '') => {
     const nextTree = await readTree(directory);
@@ -195,15 +203,24 @@ export default function ProjectWorkspace() {
     setTodaySaveState('saved');
     todayDirty.current = false;
     todayRevision.current = 0;
-    setExpanded((current) => {
-      const next = new Set(current);
-      next.add(DAILY_NOTES_FOLDER);
-      if (existingToday) {
-        next.add(`${DAILY_NOTES_FOLDER}/${todayYear}`);
-        next.add(`${DAILY_NOTES_FOLDER}/${todayYear}/${todayMonth}`);
+    let restoredExpanded: Set<string> | null = null;
+    try {
+      const saved = localStorage.getItem(expandedStorageKey(handle.name));
+      if (saved !== null) {
+        const paths = JSON.parse(saved);
+        if (Array.isArray(paths)) restoredExpanded = new Set(paths.filter((path): path is string => typeof path === 'string'));
       }
-      return next;
-    });
+    } catch { /* Invalid saved state falls back to the default expansion. */ }
+    if (restoredExpanded) {
+      setExpanded(restoredExpanded);
+    } else {
+      const initialExpanded = new Set(['', DAILY_NOTES_FOLDER]);
+      if (existingToday) {
+        initialExpanded.add(`${DAILY_NOTES_FOLDER}/${todayYear}`);
+        initialExpanded.add(`${DAILY_NOTES_FOLDER}/${todayYear}/${todayMonth}`);
+      }
+      setExpanded(initialExpanded);
+    }
     setRoot(handle); setConfig(nextConfig); setRepositoryInput(nextConfig.githubRepository); setBranchInput(nextConfig.branch);
     await rememberProject(handle); setRecent(handle); await refresh(handle);
   }
