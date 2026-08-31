@@ -110,6 +110,12 @@ button, select { font: inherit; }
 .settings-dialog { max-width: 470px; }
 .token-help { margin: 8px 0 4px; color: #7b8078; font-size: 10px; line-height: 1.5; }
 .token-help a { color: #326548; text-decoration: underline; }
+.github-auth-card { display: flex; align-items: center; gap: 11px; margin-top: 18px; padding: 13px; border: 1px solid #d9d7cf; border-radius: 8px; background: #f7f6f1; }
+.github-auth-card > svg { width: 20px; height: 20px; flex: 0 0 auto; color: #2d4939; }
+.github-auth-card > div { min-width: 0; flex: 1; }
+.github-auth-card strong { display: block; color: #354038; font-size: 12px; }
+.github-auth-card p { margin: 4px 0 0; color: #7b8078; font-size: 10px; line-height: 1.45; }
+.auth-warning { margin: 9px 0 0; color: #9a6236; font-size: 10px; }
 .backup-progress { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px; border-radius: 7px; color: #345440; background: #e8eee5; font-size: 11px; }
 .backup-progress svg { width: 15px; }
 .notice { position: fixed; z-index: 80; right: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 40px)); display: flex; align-items: center; gap: 9px; padding: 12px 14px; border: 1px solid #d0d1ca; border-radius: 9px; background: #fff; box-shadow: 0 14px 45px #26302924; font-size: 12px; }

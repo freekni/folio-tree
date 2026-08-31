@@ -6,7 +6,7 @@ type DirectoryEntries = FileSystemDirectoryHandle & {
 
 type GitHubTreeEntry = { path: string; mode: '100644'; type: 'blob'; sha: string };
 
-function parseRepository(value: string) {
+export function parseRepository(value: string) {
   const cleaned = value.trim().replace(/\.git$/, '').replace(/\/$/, '');
   const match = cleaned.match(/(?:https?:\/\/github\.com\/)?([^/]+)\/([^/]+)$/i);
   if (!match) throw new Error('GitHub 저장소 주소를 확인해주세요.');

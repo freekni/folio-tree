@@ -1,0 +1,6 @@
+name = "folio-tree-github-auth"
+main = "src/index.ts"
+compatibility_date = "2026-08-31"
+
+[vars]
+ALLOWED_ORIGINS = "https://freekni.github.io"

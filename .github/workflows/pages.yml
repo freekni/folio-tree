@@ -28,6 +28,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build:pages
+        env:
+          VITE_GITHUB_AUTH_BASE_URL: ${{ vars.VITE_GITHUB_AUTH_BASE_URL }}
+          VITE_GITHUB_APP_INSTALL_URL: ${{ vars.VITE_GITHUB_APP_INSTALL_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
