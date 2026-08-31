@@ -70,6 +70,10 @@ function expandedStorageKey(projectName: string) {
   return `folio-tree:expanded:${encodeURIComponent(projectName)}`;
 }
 
+function selectedStorageKey(projectName: string) {
+  return `folio-tree:selected:${encodeURIComponent(projectName)}`;
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -222,9 +226,11 @@ export default function ProjectWorkspace() {
     let cancelled = false;
     findDailyNote(root, todayDate).then(async (handle) => {
       if (cancelled) return;
-      setTodayHandle(handle);
       const html = handle ? await loadDocument(handle) : '';
-      if (!cancelled) setTodayHtml(html);
+      if (cancelled) return;
+      setTodayHandle(handle);
+      setTodayHtml(html);
+      if (todayEditorRef.current) todayEditorRef.current.innerHTML = html;
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [root, todayDate]);
@@ -240,6 +246,10 @@ export default function ProjectWorkspace() {
     if (!root) return;
     localStorage.setItem(expandedStorageKey(root.name), JSON.stringify(Array.from(expanded)));
   }, [expanded, root]);
+  useEffect(() => {
+    if (!root || !selected) return;
+    localStorage.setItem(selectedStorageKey(root.name), selected.path);
+  }, [root, selected]);
 
   const refresh = useCallback(async (directory: FileSystemDirectoryHandle, selectedPath = '') => {
     const nextTree = await readTree(directory);
@@ -260,12 +270,14 @@ export default function ProjectWorkspace() {
     todayDirty.current = false;
     todayRevision.current = 0;
     let restoredExpanded: Set<string> | null = null;
+    let restoredSelectedPath = '';
     try {
       const saved = localStorage.getItem(expandedStorageKey(handle.name));
       if (saved !== null) {
         const paths = JSON.parse(saved);
         if (Array.isArray(paths)) restoredExpanded = new Set(paths.filter((path): path is string => typeof path === 'string'));
       }
+      restoredSelectedPath = localStorage.getItem(selectedStorageKey(handle.name)) || '';
     } catch { /* Invalid saved state falls back to the default expansion. */ }
     if (restoredExpanded) {
       setExpanded(restoredExpanded);
@@ -277,8 +289,9 @@ export default function ProjectWorkspace() {
       }
       setExpanded(initialExpanded);
     }
+    await refresh(handle, restoredSelectedPath);
     setRoot(handle); setConfig(nextConfig); setRepositoryInput(nextConfig.githubRepository); setBranchInput(nextConfig.branch);
-    await rememberProject(handle); setRecent(handle); await refresh(handle);
+    await rememberProject(handle); setRecent(handle);
   }
 
   async function chooseFolder() {
