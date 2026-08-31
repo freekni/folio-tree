@@ -280,6 +280,20 @@ export default function ProjectWorkspace() {
     editorRef.current?.focus(); document.execCommand(command, false, value); scheduleSave();
   }
 
+  function setFontSize(size: string) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand('fontSize', false, '7');
+    editor.querySelectorAll('font[size="7"]').forEach((font) => {
+      const span = document.createElement('span');
+      span.style.fontSize = `${size}px`;
+      while (font.firstChild) span.appendChild(font.firstChild);
+      font.replaceWith(span);
+    });
+    scheduleSave();
+  }
+
   async function handleAttachments(files: FileList | null) {
     if (!files || !selected) return;
     try { await addAttachments(selected.handle, files); setAttachments(await listAttachments(selected.handle)); setNotice({ type: 'ok', message: `${files.length}개 파일을 첨부했습니다.` }); }
@@ -375,7 +389,7 @@ export default function ProjectWorkspace() {
         <div className="toolbar" aria-label="문서 서식">
           <select aria-label="문단 스타일" defaultValue="p" onChange={(event) => runCommand('formatBlock', event.target.value)}><option value="p">본문</option><option value="h1">제목 1</option><option value="h2">제목 2</option><option value="blockquote">인용문</option></select>
           <select aria-label="글꼴" defaultValue="Malgun Gothic" onChange={(event) => runCommand('fontName', event.target.value)}><option>Malgun Gothic</option><option>Arial</option><option>Georgia</option><option>Batang</option></select>
-          <select aria-label="글자 크기" defaultValue="3" onChange={(event) => runCommand('fontSize', event.target.value)}><option value="2">14</option><option value="3">16</option><option value="4">18</option><option value="5">24</option></select>
+          <select aria-label="글자 크기" defaultValue="16" onChange={(event) => setFontSize(event.target.value)}><option value="10">10</option><option value="12">12</option><option value="14">14</option><option value="16">16</option><option value="18">18</option><option value="24">24</option></select>
           <span className="toolbar-rule" />
           <button onClick={() => runCommand('bold')} aria-label="굵게"><Bold /></button><button onClick={() => runCommand('italic')} aria-label="기울임"><Italic /></button><button onClick={() => runCommand('underline')} aria-label="밑줄"><Underline /></button><button onClick={() => runCommand('insertUnorderedList')} aria-label="글머리표"><List /></button><button onClick={() => runCommand('insertOrderedList')} aria-label="번호 목록"><ListOrdered /></button><button onClick={() => { const url = window.prompt('링크 주소를 입력하세요.'); if (url) runCommand('createLink', url); }} aria-label="링크"><Link /></button><span className="toolbar-rule" /><button onClick={() => runCommand('undo')} aria-label="실행 취소"><Undo2 /></button><button onClick={() => runCommand('redo')} aria-label="다시 실행"><Redo2 /></button>
         </div>
