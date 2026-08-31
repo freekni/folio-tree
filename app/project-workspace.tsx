@@ -3,7 +3,7 @@
 import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useGroupRef } from 'react-resizable-panels';
 import {
-  AlertCircle, Bold, Check, ChevronDown, ChevronRight, CloudUpload, File,
+  AlertCircle, Bold, CalendarDays, Check, ChevronDown, ChevronRight, CloudUpload, File,
   Folder, FolderOpen, FolderPlus, Italic, Link, List, ListOrdered, MoreHorizontal,
   Paperclip, Pencil, Plus, Redo2, Settings, Trash2, Underline, Undo2, Upload,
 } from 'lucide-react';
@@ -21,9 +21,10 @@ import { Input } from '@/components/ui/input';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { backupProject } from '@/lib/github-backup';
 import {
-  addAttachments, Attachment, createChild, ensurePermission, listAttachments, loadDocument,
-  loadProjectConfig, moveChild, ProjectConfig, readTree, recentProject, rememberProject, renameChild,
-  saveDocument, saveProjectConfig, setChildPosition, TreeNode, validNodeName,
+  addAttachments, Attachment, childDirectory, createChild, DAILY_NOTES_FOLDER, ensureDailyNotesFolder,
+  ensurePermission, listAttachments, loadDocument, loadProjectConfig, localDateName, moveChild,
+  ProjectConfig, readTree, recentProject, rememberProject, renameChild, saveDocument,
+  saveProjectConfig, setChildPosition, TreeNode, validNodeName,
 } from '@/lib/project-files';
 
 type NodeAction = { kind: 'add' | 'rename' | 'delete'; node: TreeNode } | null;
@@ -67,6 +68,7 @@ function TreeItem({
 }) {
   const isExpanded = expanded.has(node.path);
   const hasChildren = node.children.length > 0;
+  const isDailyNotesRoot = node.path === DAILY_NOTES_FOLDER;
   return <>
     <ContextMenu>
       <ContextMenuTrigger
@@ -74,12 +76,12 @@ function TreeItem({
         className={`tree-row ${selectedPath === node.path ? 'selected' : ''} ${draggingPath === node.path ? 'dragging' : ''} ${dropTarget?.path === node.path ? `drop-${dropTarget.position}` : ''}`}
         style={{ paddingLeft: 8 + depth * 20 }}
         onClick={() => onSelect(node)}
-        draggable={depth > 0}
+        draggable={depth > 0 && !isDailyNotesRoot}
         onDragStart={(event) => onDragStart(node, event)}
         onDragOver={(event) => onDragOver(node, event)}
         onDrop={(event) => onDrop(node, event)}
         onDragEnd={onDragEnd}
-        title={depth > 0 ? '위·아래에 놓아 순서 변경, 가운데에 놓아 하위로 이동' : undefined}
+        title={depth > 0 && !isDailyNotesRoot ? '위·아래에 놓아 순서 변경, 가운데에 놓아 하위로 이동' : undefined}
       >
         <span className="tree-toggle" onClick={(event) => { event.stopPropagation(); if (hasChildren) onToggle(node.path); }}>
           {hasChildren ? (isExpanded ? <ChevronDown /> : <ChevronRight />) : null}
@@ -96,17 +98,17 @@ function TreeItem({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="bottom">
             <DropdownMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</DropdownMenuItem>
-            {depth > 0 && <DropdownMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</DropdownMenuItem>}
-            {depth > 0 && <DropdownMenuSeparator />}
-            {depth > 0 && <DropdownMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</DropdownMenuItem>}
+            {depth > 0 && !isDailyNotesRoot && <DropdownMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</DropdownMenuItem>}
+            {depth > 0 && !isDailyNotesRoot && <DropdownMenuSeparator />}
+            {depth > 0 && !isDailyNotesRoot && <DropdownMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</ContextMenuItem>
-        {depth > 0 && <ContextMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</ContextMenuItem>}
-        {depth > 0 && <ContextMenuSeparator />}
-        {depth > 0 && <ContextMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</ContextMenuItem>}
+        {depth > 0 && !isDailyNotesRoot && <ContextMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</ContextMenuItem>}
+        {depth > 0 && !isDailyNotesRoot && <ContextMenuSeparator />}
+        {depth > 0 && !isDailyNotesRoot && <ContextMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
     {isExpanded && node.children.map((child) => <TreeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} onSelect={onSelect} onToggle={onToggle} onAction={onAction} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />)}
@@ -132,12 +134,21 @@ export default function ProjectWorkspace() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ type: 'ok' | 'error'; message: string } | null>(null);
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [todaySaveState, setTodaySaveState] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [todayDate] = useState(() => localDateName());
+  const [todayHandle, setTodayHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [todayHtml, setTodayHtml] = useState('');
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const todayEditorRef = useRef<HTMLDivElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const todaySaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const todayDirty = useRef(false);
+  const todayRevision = useRef(0);
   const workspaceGroupRef = useGroupRef();
+  const todayPath = `${DAILY_NOTES_FOLDER}/${todayDate}`;
 
   useEffect(() => { recentProject().then(setRecent); }, []);
   useEffect(() => {
@@ -145,9 +156,9 @@ export default function ProjectWorkspace() {
     try {
       const saved = localStorage.getItem('folio-tree:workspace-layout');
       if (!saved) return;
-      const layout = JSON.parse(saved) as { tree?: number; editor?: number };
-      if (typeof layout.tree === 'number' && typeof layout.editor === 'number') {
-        workspaceGroupRef.current?.setLayout({ tree: layout.tree, editor: layout.editor });
+      const layout = JSON.parse(saved) as { tree?: number; editor?: number; daily?: number };
+      if (typeof layout.tree === 'number' && typeof layout.editor === 'number' && typeof layout.daily === 'number') {
+        workspaceGroupRef.current?.setLayout({ tree: layout.tree, editor: layout.editor, daily: layout.daily });
       }
     } catch { /* Use the default layout when stored preferences are invalid. */ }
   }, [root, workspaceGroupRef]);
@@ -156,6 +167,9 @@ export default function ProjectWorkspace() {
     const timer = setTimeout(() => setNotice(null), 4500);
     return () => clearTimeout(timer);
   }, [notice]);
+  useEffect(() => {
+    if (todayEditorRef.current) todayEditorRef.current.innerHTML = todayHtml;
+  }, [todayHtml, root]);
 
   const refresh = useCallback(async (directory: FileSystemDirectoryHandle, selectedPath = '') => {
     const nextTree = await readTree(directory);
@@ -168,6 +182,14 @@ export default function ProjectWorkspace() {
   async function connectProject(handle: FileSystemDirectoryHandle) {
     if (!await ensurePermission(handle)) throw new Error('선택한 폴더에 대한 읽기·쓰기 권한이 필요합니다.');
     const nextConfig = await loadProjectConfig(handle);
+    const dailyFolder = await ensureDailyNotesFolder(handle);
+    const existingToday = await childDirectory(dailyFolder, todayDate);
+    setTodayHandle(existingToday);
+    setTodayHtml(existingToday ? await loadDocument(existingToday) : '');
+    setTodaySaveState('saved');
+    todayDirty.current = false;
+    todayRevision.current = 0;
+    setExpanded((current) => new Set(current).add(DAILY_NOTES_FOLDER));
     setRoot(handle); setConfig(nextConfig); setRepositoryInput(nextConfig.githubRepository); setBranchInput(nextConfig.branch);
     await rememberProject(handle); setRecent(handle); await refresh(handle);
   }
@@ -185,19 +207,86 @@ export default function ProjectWorkspace() {
     if (!selected || !editorRef.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveState('saving');
-    try { await saveDocument(selected.handle, selected.name, editorRef.current.innerHTML); setSaveState('saved'); }
+    const html = editorRef.current.innerHTML;
+    const todayRevisionAtSave = todayRevision.current;
+    try {
+      await saveDocument(selected.handle, selected.name, html);
+      setSaveState('saved');
+      if (selected.path === todayPath) {
+        if (todayRevision.current === todayRevisionAtSave) {
+          if (todayEditorRef.current) todayEditorRef.current.innerHTML = html;
+          todayDirty.current = false;
+          setTodaySaveState('saved');
+        }
+      }
+    }
     catch { setSaveState('error'); }
   }
 
   function scheduleSave() {
     setSaveState('saving');
+    if (selected?.path === todayPath && editorRef.current && todayEditorRef.current) {
+      todayEditorRef.current.innerHTML = editorRef.current.innerHTML;
+      todayDirty.current = true;
+      todayRevision.current += 1;
+      setTodaySaveState('saving');
+      if (todaySaveTimer.current) clearTimeout(todaySaveTimer.current);
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(saveCurrent, 650);
   }
 
+  async function saveToday() {
+    if (!root || !todayEditorRef.current || !todayDirty.current) return;
+    if (todaySaveTimer.current) clearTimeout(todaySaveTimer.current);
+    setTodaySaveState('saving');
+    const html = todayEditorRef.current.innerHTML;
+    const revisionAtSave = todayRevision.current;
+    try {
+      const dailyFolder = await ensureDailyNotesFolder(root);
+      const existing = todayHandle || await childDirectory(dailyFolder, todayDate);
+      const noteHandle = existing || await createChild(dailyFolder, todayDate);
+      await saveDocument(noteHandle, todayDate, html);
+      setTodayHandle(noteHandle);
+      if (todayRevision.current === revisionAtSave) {
+        todayDirty.current = false;
+        setTodaySaveState('saved');
+      }
+      if (selected?.path === todayPath && editorRef.current && todayRevision.current === revisionAtSave) {
+        editorRef.current.innerHTML = html;
+        setSaveState('saved');
+      }
+      if (!existing) {
+        const nextTree = await readTree(root);
+        setTree(nextTree);
+        setSelected((current) => current ? findNode(nextTree, current.path) || nextTree : nextTree);
+        setExpanded((current) => new Set(current).add(DAILY_NOTES_FOLDER));
+      }
+    } catch {
+      setTodaySaveState('error');
+    }
+  }
+
+  function scheduleTodaySave() {
+    todayDirty.current = true;
+    todayRevision.current += 1;
+    setTodaySaveState('saving');
+    if (selected?.path === todayPath && editorRef.current && todayEditorRef.current) {
+      editorRef.current.innerHTML = todayEditorRef.current.innerHTML;
+      setSaveState('saving');
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    }
+    if (todaySaveTimer.current) clearTimeout(todaySaveTimer.current);
+    todaySaveTimer.current = setTimeout(saveToday, 650);
+  }
+
   async function selectNode(node: TreeNode) {
-    await saveCurrent(); setSelected(node);
-    if (editorRef.current) editorRef.current.innerHTML = await loadDocument(node.handle);
+    await saveCurrent();
+    await saveToday();
+    setSelected(node);
+    const html = await loadDocument(node.handle);
+    if (editorRef.current) editorRef.current.innerHTML = html;
+    if (node.path === todayPath && todayEditorRef.current) todayEditorRef.current.innerHTML = html;
     setAttachments(await listAttachments(node.handle));
   }
 
@@ -370,6 +459,7 @@ export default function ProjectWorkspace() {
     const previousConfig = config;
     try {
       await saveCurrent();
+      await saveToday();
       const next = { ...config, lastBackupAt: new Date().toISOString() };
       await saveProjectConfig(root, next);
       const result = await backupProject(root, next, token.trim(), setBackupStatus);
@@ -386,6 +476,13 @@ export default function ProjectWorkspace() {
     if (!config?.githubRepository) { setSettingsOpen(true); return; }
     setBackupStatus(''); setBackupOpen(true);
   }
+
+  const overallSaveState = saveState === 'error' || todaySaveState === 'error'
+    ? 'error'
+    : saveState === 'saving' || todaySaveState === 'saving' ? 'saving' : 'saved';
+  const todayLabel = new Intl.DateTimeFormat('ko-KR', {
+    month: 'long', day: 'numeric', weekday: 'short',
+  }).format(new Date(`${todayDate}T00:00:00`));
 
   if (!root || !tree || !selected || !config) {
     return <main className="welcome-shell">
@@ -408,7 +505,7 @@ export default function ProjectWorkspace() {
     <header className="topbar">
       <div className="brand-mark">F</div><div><p className="eyebrow">LOCAL PROJECT SPACE</p><h1>Folio Tree</h1></div>
       <div className="topbar-actions">
-        <span className={`save-state ${saveState}`}><span />{saveState === 'saved' ? '로컬에 저장됨' : saveState === 'saving' ? '저장 중…' : '저장 실패'}</span>
+        <span className={`save-state ${overallSaveState}`}><span />{overallSaveState === 'saved' ? '로컬에 저장됨' : overallSaveState === 'saving' ? '저장 중…' : '저장 실패'}</span>
         <Button variant="outline" onClick={requestBackup}><CloudUpload /> GitHub에 백업</Button>
         <Button variant="ghost" size="icon" aria-label="설정" onClick={() => setSettingsOpen(true)}><Settings /></Button>
       </div>
@@ -419,7 +516,7 @@ export default function ProjectWorkspace() {
       className="workspace"
       orientation="horizontal"
       groupRef={workspaceGroupRef}
-      defaultLayout={{ tree: 28, editor: 72 }}
+      defaultLayout={{ tree: 22, editor: 58, daily: 20 }}
       onLayoutChanged={(layout) => localStorage.setItem('folio-tree:workspace-layout', JSON.stringify(layout))}
     >
       <ResizablePanel id="tree" defaultSize="292px" minSize="220px" maxSize="520px" className="tree-resizable-panel">
@@ -436,7 +533,7 @@ export default function ProjectWorkspace() {
 
       <ResizableHandle withHandle className="tree-resize-handle" aria-label="트리 영역 너비 조절" />
 
-      <ResizablePanel id="editor" minSize="460px" className="editor-resizable-panel">
+      <ResizablePanel id="editor" minSize="420px" className="editor-resizable-panel">
         <article className="editor-panel">
         <div className="document-head"><div><p className="breadcrumb">{selected.path ? `${config.name} / ${selected.path.split('/').join(' / ')}` : config.name}</p><h2>{selected.name}</h2></div><div className="document-actions"><Button variant="outline" size="sm" onClick={() => attachmentInput.current?.click()}><Paperclip />첨부</Button><span className="file-label">content.html</span></div></div>
         <div className="toolbar" aria-label="문서 서식">
@@ -449,6 +546,29 @@ export default function ProjectWorkspace() {
         <div className="paper-wrap"><div ref={editorRef} className="paper editable" contentEditable suppressContentEditableWarning onInput={scheduleSave} data-placeholder="이 항목의 내용을 입력하세요…" /></div>
         <footer className="editor-footer"><span>{config.lastBackupAt ? `마지막 GitHub 백업: ${new Date(config.lastBackupAt).toLocaleString('ko-KR')}` : 'GitHub 백업 기록 없음'}</span><span>첨부파일 {attachments.length}개</span></footer>
         </article>
+      </ResizablePanel>
+
+      <ResizableHandle withHandle className="tree-resize-handle" aria-label="오늘 확인사항 영역 너비 조절" />
+
+      <ResizablePanel id="daily" defaultSize="320px" minSize="280px" maxSize="480px" className="daily-resizable-panel">
+        <aside className="today-panel">
+          <header className="today-head">
+            <div className="today-title"><CalendarDays /><div><p className="eyebrow">DAILY CHECK</p><h2>오늘 확인사항</h2></div></div>
+            <span className={`today-save-state ${todaySaveState}`}>{todaySaveState === 'saved' ? '저장됨' : todaySaveState === 'saving' ? '저장 중…' : '저장 실패'}</span>
+          </header>
+          <div className="today-date"><strong>{todayLabel}</strong><span>{todayDate}</span></div>
+          <div className="today-body">
+            <div
+              ref={todayEditorRef}
+              className="today-editor editable"
+              contentEditable
+              suppressContentEditableWarning
+              onInput={scheduleTodaySave}
+              data-placeholder="오늘 확인하거나 기억할 내용을 입력하세요…"
+            />
+          </div>
+          <footer className="today-footer">입력한 내용은 {DAILY_NOTES_FOLDER} / {todayDate}에 자동 저장됩니다.</footer>
+        </aside>
       </ResizablePanel>
     </ResizablePanelGroup>
 

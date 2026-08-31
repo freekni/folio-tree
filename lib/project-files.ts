@@ -38,6 +38,7 @@ const CONFIG_FILE = 'project.json';
 const CONTENT_FILE = 'content.html';
 const ORDER_FILE = '.folio-order.json';
 const DB_NAME = 'folio-tree';
+export const DAILY_NOTES_FOLDER = '일별 확인사항';
 
 export async function ensurePermission(handle: FileSystemDirectoryHandle, request = true) {
   const permissionHandle = handle as PermissionHandle;
@@ -174,6 +175,26 @@ export async function createChild(parent: FileSystemDirectoryHandle, name: strin
   await saveDocument(child, name, '');
   await setChildPosition(parent, name);
   return child;
+}
+
+export async function childDirectory(parent: FileSystemDirectoryHandle, name: string) {
+  try {
+    return await parent.getDirectoryHandle(name);
+  } catch (error) {
+    if ((error as DOMException).name === 'NotFoundError') return null;
+    throw error;
+  }
+}
+
+export async function ensureDailyNotesFolder(root: FileSystemDirectoryHandle) {
+  return await childDirectory(root, DAILY_NOTES_FOLDER) || await createChild(root, DAILY_NOTES_FOLDER);
+}
+
+export function localDateName(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 async function copyFile(source: FileSystemFileHandle, target: FileSystemDirectoryHandle, name: string) {
