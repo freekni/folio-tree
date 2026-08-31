@@ -5,7 +5,7 @@ import { useGroupRef } from 'react-resizable-panels';
 import {
   AlertCircle, Bold, CalendarDays, Check, ChevronDown, ChevronRight, CloudUpload, Download, File,
   Folder, FolderOpen, FolderPlus, Italic, Link, List, ListOrdered, MoreHorizontal,
-  GitBranch, LogIn, Paperclip, Pencil, Plus, Redo2, Settings, Trash2, Underline, Undo2, Upload,
+  GitBranch, LogIn, Paperclip, Pencil, Plus, Redo2, Settings, Settings2, Trash2, Underline, Undo2, Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +32,23 @@ import {
 type NodeAction = { kind: 'add' | 'rename' | 'delete'; node: TreeNode } | null;
 type DropPosition = 'before' | 'inside' | 'after';
 type DropTarget = { path: string; position: DropPosition } | null;
+type EditorDefaults = { fontFamily: string; fontSize: string; lineHeight: string };
+const EDITOR_DEFAULTS_KEY = 'folio-tree:editor-defaults';
+const DEFAULT_EDITOR_DEFAULTS: EditorDefaults = { fontFamily: 'Malgun Gothic', fontSize: '16', lineHeight: '1.8' };
+const EDITOR_FONTS = ['Malgun Gothic', 'Arial', 'Georgia', 'Batang'];
+const EDITOR_SIZES = ['10', '12', '14', '16', '18', '24'];
+const EDITOR_LINE_HEIGHTS = ['1', '1.2', '1.4', '1.6', '1.8', '2'];
+
+function loadEditorDefaults(): EditorDefaults {
+  if (typeof window === 'undefined') return DEFAULT_EDITOR_DEFAULTS;
+  try {
+    const saved = JSON.parse(localStorage.getItem(EDITOR_DEFAULTS_KEY) || 'null') as Partial<EditorDefaults> | null;
+    if (saved && EDITOR_FONTS.includes(saved.fontFamily || '') && EDITOR_SIZES.includes(saved.fontSize || '') && EDITOR_LINE_HEIGHTS.includes(saved.lineHeight || '')) {
+      return { fontFamily: saved.fontFamily!, fontSize: saved.fontSize!, lineHeight: saved.lineHeight! };
+    }
+  } catch { /* Invalid preferences use the built-in defaults. */ }
+  return DEFAULT_EDITOR_DEFAULTS;
+}
 
 function findNode(root: TreeNode | null, path: string): TreeNode | null {
   if (!root) return null;
@@ -135,6 +152,9 @@ export default function ProjectWorkspace() {
   const [nodeAction, setNodeAction] = useState<NodeAction>(null);
   const [nodeName, setNodeName] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [editorDefaults, setEditorDefaults] = useState<EditorDefaults>(() => loadEditorDefaults());
+  const [preferenceDraft, setPreferenceDraft] = useState<EditorDefaults>(() => loadEditorDefaults());
   const [repositoryInput, setRepositoryInput] = useState('');
   const [branchInput, setBranchInput] = useState('main');
   const [backupOpen, setBackupOpen] = useState(false);
@@ -194,6 +214,14 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     if (todayEditorRef.current) todayEditorRef.current.innerHTML = todayHtml;
   }, [todayHtml, root]);
+  useEffect(() => {
+    for (const editor of [editorRef.current, todayEditorRef.current]) {
+      if (!editor) continue;
+      editor.style.fontFamily = editorDefaults.fontFamily;
+      editor.style.fontSize = `${editorDefaults.fontSize}px`;
+      editor.style.lineHeight = editorDefaults.lineHeight;
+    }
+  }, [editorDefaults, selected, root, todayHtml]);
   useEffect(() => {
     if (!root) return;
     localStorage.setItem(expandedStorageKey(root.name), JSON.stringify(Array.from(expanded)));
@@ -544,6 +572,19 @@ export default function ProjectWorkspace() {
     await saveProjectConfig(root, next); setConfig(next); setSettingsOpen(false); setNotice({ type: 'ok', message: '프로젝트 설정을 저장했습니다.' });
   }
 
+  function openPreferences() {
+    setPreferenceDraft(editorDefaults);
+    setPreferencesOpen(true);
+  }
+
+  function savePreferences(event: FormEvent) {
+    event.preventDefault();
+    localStorage.setItem(EDITOR_DEFAULTS_KEY, JSON.stringify(preferenceDraft));
+    setEditorDefaults(preferenceDraft);
+    setPreferencesOpen(false);
+    setNotice({ type: 'ok', message: '기본 편집 설정을 저장했습니다.' });
+  }
+
   async function connectGitHub() {
     setBusy(true);
     setBackupStatus('GitHub 인증을 기다리는 중…');
@@ -621,7 +662,8 @@ export default function ProjectWorkspace() {
       <div className="topbar-actions">
         <span className={`save-state ${overallSaveState}`}><span />{overallSaveState === 'saved' ? '로컬에 저장됨' : overallSaveState === 'saving' ? '저장 중…' : '저장 실패'}</span>
         <Button variant="outline" onClick={requestBackup}><CloudUpload /> GitHub에 백업</Button>
-        <Button variant="ghost" size="icon" aria-label="설정" onClick={() => setSettingsOpen(true)}><Settings /></Button>
+        <Button variant="ghost" size="icon" aria-label="기본 편집 설정" onClick={openPreferences}><Settings2 /></Button>
+        <Button variant="ghost" size="icon" aria-label="프로젝트 설정" onClick={() => setSettingsOpen(true)}><Settings /></Button>
       </div>
     </header>
 
@@ -688,6 +730,8 @@ export default function ProjectWorkspace() {
     </ResizablePanelGroup>
 
     <Dialog open={!!nodeAction} onOpenChange={(open) => !open && setNodeAction(null)}><DialogContent><form onSubmit={submitNodeAction}><DialogHeader><DialogTitle>{nodeAction?.kind === 'add' ? '하위 항목 추가' : nodeAction?.kind === 'rename' ? '이름 변경' : '항목 삭제'}</DialogTitle><DialogDescription>{nodeAction?.kind === 'delete' ? `“${nodeAction.node.name}”과 모든 하위 내용 및 첨부파일을 삭제합니다.` : '트리에 표시할 이름을 입력하세요.'}</DialogDescription></DialogHeader>{nodeAction?.kind !== 'delete' && <Input className="dialog-input" autoFocus value={nodeName} onChange={(event) => setNodeName(event.target.value)} placeholder="새 항목 이름" />}<DialogFooter><Button type="button" variant="outline" onClick={() => setNodeAction(null)}>취소</Button><Button type="submit" variant={nodeAction?.kind === 'delete' ? 'destructive' : 'default'}>{nodeAction?.kind === 'delete' ? '삭제' : '확인'}</Button></DialogFooter></form></DialogContent></Dialog>
+
+    <Dialog open={preferencesOpen} onOpenChange={setPreferencesOpen}><DialogContent className="settings-dialog"><form onSubmit={savePreferences}><DialogHeader><DialogTitle>기본 편집 설정</DialogTitle><DialogDescription>항목을 열 때 적용할 글꼴, 글자 크기, 줄 간격입니다. 문서에서 직접 지정한 서식은 유지됩니다.</DialogDescription></DialogHeader><label className="field-label">기본 글꼴<select className="preference-select" value={preferenceDraft.fontFamily} onChange={(event) => setPreferenceDraft((current) => ({ ...current, fontFamily: event.target.value }))}>{EDITOR_FONTS.map((font) => <option key={font}>{font}</option>)}</select></label><label className="field-label">기본 글자 크기<select className="preference-select" value={preferenceDraft.fontSize} onChange={(event) => setPreferenceDraft((current) => ({ ...current, fontSize: event.target.value }))}>{EDITOR_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}</select></label><label className="field-label">기본 줄 간격<select className="preference-select" value={preferenceDraft.lineHeight} onChange={(event) => setPreferenceDraft((current) => ({ ...current, lineHeight: event.target.value }))}>{EDITOR_LINE_HEIGHTS.map((height) => <option key={height} value={height}>줄 {height}</option>)}</select></label><DialogFooter><Button type="button" variant="outline" onClick={() => setPreferencesOpen(false)}>취소</Button><Button type="submit">저장</Button></DialogFooter></form></DialogContent></Dialog>
 
     <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}><DialogContent className="settings-dialog"><form onSubmit={saveSettings}><DialogHeader><DialogTitle>프로젝트 설정</DialogTitle><DialogDescription>GitHub 저장소 주소는 프로젝트의 project.json 파일에 저장됩니다.</DialogDescription></DialogHeader><label className="field-label">GitHub 저장소<Input value={repositoryInput} onChange={(event) => setRepositoryInput(event.target.value)} placeholder="https://github.com/사용자/저장소" /></label><label className="field-label">브랜치<Input value={branchInput} onChange={(event) => setBranchInput(event.target.value)} placeholder="main" /></label><DialogFooter><Button type="button" variant="outline" onClick={() => setSettingsOpen(false)}>취소</Button><Button type="submit">저장</Button></DialogFooter></form></DialogContent></Dialog>
 

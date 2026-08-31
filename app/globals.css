@@ -60,6 +60,7 @@ button, select { font: inherit; }
 .document-actions { display: flex; align-items: center; gap: 10px; }
 .toolbar { min-height: 47px; display: flex; align-items: center; gap: 4px; padding: 7px 32px; border-bottom: 1px solid var(--border); background: #fffefa; }
 .toolbar select { height: 30px; border: 1px solid #dfddd6; border-radius: 6px; padding: 0 24px 0 8px; color: #555a53; background: #fff; font-size: 12px; }
+.preference-select { width: 100%; height: 36px; border: 1px solid #d8d5cc; border-radius: 7px; padding: 0 10px; color: #454b45; background: #fffefa; font-size: 13px; }
 .toolbar button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; color: #545a53; background: transparent; }
 .toolbar button:hover { background: #efeee9; }
 .toolbar svg { width: 15px; height: 15px; }
