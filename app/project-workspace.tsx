@@ -156,12 +156,25 @@ export default function ProjectWorkspace() {
   const todaySaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const todayDirty = useRef(false);
   const todayRevision = useRef(0);
+  const autoOpenAttempted = useRef(false);
   const workspaceGroupRef = useGroupRef();
   const todayYear = todayDate.slice(0, 4);
   const todayMonth = todayDate.slice(0, 7);
   const todayPath = dailyNotePath(todayDate);
 
-  useEffect(() => { recentProject().then(setRecent); }, []);
+  useEffect(() => {
+    if (autoOpenAttempted.current) return;
+    autoOpenAttempted.current = true;
+    recentProject().then(async (handle) => {
+      setRecent(handle);
+      if (!handle || !await ensurePermission(handle, false)) return;
+      try {
+        await connectProject(handle);
+      } catch (error) {
+        setNotice({ type: 'error', message: `최근 프로젝트를 열지 못했습니다: ${(error as Error).message}` });
+      }
+    });
+  }, []);
   useEffect(() => {
     if (!root) return;
     try {
@@ -474,6 +487,31 @@ export default function ProjectWorkspace() {
     scheduleSave();
   }
 
+  function setLineHeight(lineHeight: string) {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+
+    editor.focus();
+    const blockSelector = 'p, div, h1, h2, h3, blockquote, li';
+    let blocks = Array.from(editor.querySelectorAll<HTMLElement>(blockSelector)).filter((block) => {
+      try { return range.intersectsNode(block); } catch { return false; }
+    });
+
+    if (blocks.length === 0) {
+      document.execCommand('formatBlock', false, 'p');
+      const anchor = selection.anchorNode;
+      const anchorElement = anchor instanceof HTMLElement ? anchor : anchor?.parentElement;
+      const block = anchorElement?.closest<HTMLElement>(blockSelector);
+      if (block && editor.contains(block)) blocks = [block];
+    }
+
+    blocks.forEach((block) => { block.style.lineHeight = lineHeight; });
+    scheduleSave();
+  }
+
   async function handleAttachments(files: FileList | null) {
     if (!files || !selected) return;
     try {
@@ -616,6 +654,7 @@ export default function ProjectWorkspace() {
           <select aria-label="문단 스타일" defaultValue="p" onChange={(event) => runCommand('formatBlock', event.target.value)}><option value="p">본문</option><option value="h1">제목 1</option><option value="h2">제목 2</option><option value="blockquote">인용문</option></select>
           <select aria-label="글꼴" defaultValue="Malgun Gothic" onChange={(event) => runCommand('fontName', event.target.value)}><option>Malgun Gothic</option><option>Arial</option><option>Georgia</option><option>Batang</option></select>
           <select aria-label="글자 크기" defaultValue="16" onChange={(event) => setFontSize(event.target.value)}><option value="10">10</option><option value="12">12</option><option value="14">14</option><option value="16">16</option><option value="18">18</option><option value="24">24</option></select>
+          <select aria-label="줄 간격" defaultValue="1.8" onChange={(event) => setLineHeight(event.target.value)}><option value="1">줄 1.0</option><option value="1.2">줄 1.2</option><option value="1.4">줄 1.4</option><option value="1.6">줄 1.6</option><option value="1.8">줄 1.8</option><option value="2">줄 2.0</option></select>
           <span className="toolbar-rule" />
           <button onClick={() => runCommand('bold')} aria-label="굵게"><Bold /></button><button onClick={() => runCommand('italic')} aria-label="기울임"><Italic /></button><button onClick={() => runCommand('underline')} aria-label="밑줄"><Underline /></button><button onClick={() => runCommand('insertUnorderedList')} aria-label="글머리표"><List /></button><button onClick={() => runCommand('insertOrderedList')} aria-label="번호 목록"><ListOrdered /></button><button onClick={() => { const url = window.prompt('링크 주소를 입력하세요.'); if (url) runCommand('createLink', url); }} aria-label="링크"><Link /></button><span className="toolbar-rule" /><button onClick={() => runCommand('undo')} aria-label="실행 취소"><Undo2 /></button><button onClick={() => runCommand('redo')} aria-label="다시 실행"><Redo2 /></button>
         </div>
