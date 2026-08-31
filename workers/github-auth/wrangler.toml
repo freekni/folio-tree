@@ -4,3 +4,4 @@ compatibility_date = "2026-08-31"
 
 [vars]
 ALLOWED_ORIGINS = "https://freekni.github.io"
+GITHUB_APP_CLIENT_ID = "Iv23lidYQShVazykGSrh"

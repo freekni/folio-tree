@@ -17,8 +17,8 @@ GitHub의 단기 접근 권한은 브라우저 메모리에만 존재하며 저�
 
 1. GitHub App을 만들고 Homepage URL을 `https://freekni.github.io/folio-tree/`, Callback URL을 인증 Worker의 `/oauth/callback`로 지정합니다.
 2. Repository permissions에서 **Contents: Read and write**를 허용하고, 앱을 Public으로 설정합니다.
-3. `workers/github-auth`를 Cloudflare Workers에 배포하고 `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`을 설정합니다.
-4. `.env.example`의 두 값을 GitHub Actions 빌드 환경에 입력합니다.
+3. 인증 Worker는 `https://folio-tree-github-auth.freekni99.workers.dev`에 배포되어 있습니다.
+4. GitHub Actions의 `VITE_GITHUB_AUTH_BASE_URL`, `VITE_GITHUB_APP_INSTALL_URL` 저장소 변수가 Pages 빌드에 연결되어 있습니다.
 
 인증 Worker는 인증 코드만 GitHub 토큰으로 교환하며 프로젝트 파일을 받거나 저장하지 않습니다.
 
