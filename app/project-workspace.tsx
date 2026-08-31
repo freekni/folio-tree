@@ -125,7 +125,7 @@ function TreeItem({
             >
               <MoreHorizontal />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="bottom">
+            <DropdownMenuContent className="tree-action-menu" align="end" side="bottom">
               <DropdownMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</DropdownMenuItem>
               {depth > 0 && !isDailyNotesRoot && <DropdownMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</DropdownMenuItem>}
               {depth > 0 && !isDailyNotesRoot && <DropdownMenuSeparator />}
@@ -134,7 +134,7 @@ function TreeItem({
           </DropdownMenu>
         </span>
       </ContextMenuTrigger>
-      <ContextMenuContent>
+      <ContextMenuContent className="tree-action-menu">
         <ContextMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</ContextMenuItem>
         {depth > 0 && !isDailyNotesRoot && <ContextMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</ContextMenuItem>}
         {depth > 0 && !isDailyNotesRoot && <ContextMenuSeparator />}
