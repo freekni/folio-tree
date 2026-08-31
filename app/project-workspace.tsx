@@ -214,6 +214,20 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     if (todayEditorRef.current) todayEditorRef.current.innerHTML = todayHtml;
   }, [todayHtml, root]);
+  // Re-read the current day's note after the workspace mounts. This also covers
+  // reopening a remembered project where the editor DOM did not exist yet when
+  // the project connection started.
+  useEffect(() => {
+    if (!root) return;
+    let cancelled = false;
+    findDailyNote(root, todayDate).then(async (handle) => {
+      if (cancelled) return;
+      setTodayHandle(handle);
+      const html = handle ? await loadDocument(handle) : '';
+      if (!cancelled) setTodayHtml(html);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [root, todayDate]);
   useEffect(() => {
     for (const editor of [editorRef.current, todayEditorRef.current]) {
       if (!editor) continue;
