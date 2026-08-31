@@ -5,6 +5,7 @@ type DirectoryEntries = FileSystemDirectoryHandle & {
 };
 
 type GitHubTreeEntry = { path: string; mode: '100644'; type: 'blob'; sha: string };
+type GitHubTreeResponse = { tree: { path: string; type: 'blob' | 'tree'; sha: string }[]; truncated: boolean };
 
 export function parseRepository(value: string) {
   const cleaned = value.trim().replace(/\.git$/, '').replace(/\/$/, '');
@@ -130,4 +131,50 @@ export async function backupProject(
     method: 'PATCH', body: JSON.stringify({ sha: commit.sha, force: false }),
   });
   return { commitSha: commit.sha, fileCount: files.length };
+}
+
+function base64ToBytes(value: string) {
+  const binary = atob(value.replace(/\s/g, ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+async function directoryForFile(root: FileSystemDirectoryHandle, path: string) {
+  const parts = path.split('/');
+  const filename = parts.pop();
+  if (!filename || parts.some((part) => !part || part === '.' || part === '..')) throw new Error('GitHub 저장소에 올바르지 않은 파일 경로가 있습니다.');
+  let directory = root;
+  for (const part of parts) directory = await directory.getDirectoryHandle(part, { create: true });
+  return { directory, filename };
+}
+
+export async function restoreProject(
+  target: FileSystemDirectoryHandle,
+  config: ProjectConfig,
+  token: string,
+  progress: (message: string) => void,
+) {
+  const { owner, repo } = parseRepository(config.githubRepository);
+  const branch = config.branch || 'main';
+  progress('GitHub 백업 목록을 확인하는 중…');
+  const ref = await api<{ object: { sha: string } }>(`/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, token);
+  const commit = await api<{ tree: { sha: string } }>(`/repos/${owner}/${repo}/git/commits/${ref.object.sha}`, token);
+  const tree = await api<GitHubTreeResponse>(`/repos/${owner}/${repo}/git/trees/${commit.tree.sha}?recursive=1`, token);
+  if (tree.truncated) throw new Error('저장소 파일 수가 너무 많아 다운로드할 수 없습니다.');
+
+  const files = tree.tree.filter((entry) => entry.type === 'blob');
+  if (files.length === 0) throw new Error('다운로드할 백업 파일이 없습니다.');
+  for (let index = 0; index < files.length; index += 1) {
+    const item = files[index];
+    progress(`파일 다운로드 중 ${index + 1}/${files.length}`);
+    const blob = await api<{ content: string; encoding: string }>(`/repos/${owner}/${repo}/git/blobs/${item.sha}`, token);
+    if (blob.encoding !== 'base64') throw new Error(`${item.path} 파일 형식을 읽을 수 없습니다.`);
+    const { directory, filename } = await directoryForFile(target, item.path);
+    const file = await directory.getFileHandle(filename, { create: true });
+    const writable = await file.createWritable();
+    await writable.write(base64ToBytes(blob.content));
+    await writable.close();
+  }
+  return { fileCount: files.length };
 }
