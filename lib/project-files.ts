@@ -10,6 +10,7 @@ export type TreeNode = {
   name: string;
   path: string;
   handle: FileSystemDirectoryHandle;
+  attachmentCount: number;
   children: TreeNode[];
 };
 
@@ -88,9 +89,12 @@ export async function saveProjectConfig(root: FileSystemDirectoryHandle, config:
 export async function readTree(root: FileSystemDirectoryHandle): Promise<TreeNode> {
   async function visit(handle: FileSystemDirectoryHandle, path: string): Promise<TreeNode> {
     const children: TreeNode[] = [];
+    let attachmentCount = 0;
     for await (const [name, entry] of (handle as DirectoryEntries).entries()) {
       if (entry.kind === 'directory' && !name.startsWith('.')) {
         children.push(await visit(entry as FileSystemDirectoryHandle, path ? `${path}/${name}` : name));
+      } else if (entry.kind === 'file' && name !== CONTENT_FILE && name !== CONFIG_FILE && !name.startsWith('.')) {
+        attachmentCount += 1;
       }
     }
     const order = await readChildOrder(handle);
@@ -102,7 +106,7 @@ export async function readTree(root: FileSystemDirectoryHandle): Promise<TreeNod
       if (bIndex >= 0) return 1;
       return a.name.localeCompare(b.name, 'ko');
     });
-    return { name: handle.name, path, handle, children };
+    return { name: handle.name, path, handle, attachmentCount, children };
   }
   return visit(root, '');
 }

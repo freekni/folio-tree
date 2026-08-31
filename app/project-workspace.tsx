@@ -3,7 +3,7 @@
 import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useGroupRef } from 'react-resizable-panels';
 import {
-  AlertCircle, Bold, CalendarDays, Check, ChevronDown, ChevronRight, CloudUpload, File,
+  AlertCircle, Bold, CalendarDays, Check, ChevronDown, ChevronRight, CloudUpload, Download, File,
   Folder, FolderOpen, FolderPlus, Italic, Link, List, ListOrdered, MoreHorizontal,
   Paperclip, Pencil, Plus, Redo2, Settings, Trash2, Underline, Undo2, Upload,
 } from 'lucide-react';
@@ -88,21 +88,24 @@ function TreeItem({
         </span>
         {isExpanded && hasChildren ? <FolderOpen /> : <Folder />}
         <span className="tree-name">{node.name}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<button type="button" className="tree-more-button" aria-label={`${node.name} 메뉴`} />}
-            onClick={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <MoreHorizontal />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="bottom">
-            <DropdownMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</DropdownMenuItem>
-            {depth > 0 && !isDailyNotesRoot && <DropdownMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</DropdownMenuItem>}
-            {depth > 0 && !isDailyNotesRoot && <DropdownMenuSeparator />}
-            {depth > 0 && !isDailyNotesRoot && <DropdownMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</DropdownMenuItem>}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <span className="tree-row-actions">
+          {node.attachmentCount > 0 && <span className="tree-attachment-badge" title={`첨부파일 ${node.attachmentCount}개`}><Paperclip /><span>{node.attachmentCount}</span></span>}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<button type="button" className="tree-more-button" aria-label={`${node.name} 메뉴`} />}
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="bottom">
+              <DropdownMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</DropdownMenuItem>
+              {depth > 0 && !isDailyNotesRoot && <DropdownMenuItem onClick={() => onAction({ kind: 'rename', node })}><Pencil />이름 변경</DropdownMenuItem>}
+              {depth > 0 && !isDailyNotesRoot && <DropdownMenuSeparator />}
+              {depth > 0 && !isDailyNotesRoot && <DropdownMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</DropdownMenuItem>}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </span>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onAction({ kind: 'add', node })}><FolderPlus />하위 항목 추가</ContextMenuItem>
@@ -438,13 +441,28 @@ export default function ProjectWorkspace() {
 
   async function handleAttachments(files: FileList | null) {
     if (!files || !selected) return;
-    try { await addAttachments(selected.handle, files); setAttachments(await listAttachments(selected.handle)); setNotice({ type: 'ok', message: `${files.length}개 파일을 첨부했습니다.` }); }
+    try {
+      await addAttachments(selected.handle, files);
+      setAttachments(await listAttachments(selected.handle));
+      if (root) {
+        const nextTree = await readTree(root);
+        setTree(nextTree);
+        setSelected(findNode(nextTree, selected.path) || nextTree);
+      }
+      setNotice({ type: 'ok', message: `${files.length}개 파일을 첨부했습니다.` });
+    }
     catch (error) { setNotice({ type: 'error', message: (error as Error).message }); }
   }
 
-  async function openAttachment(item: Attachment) {
+  async function downloadAttachment(item: Attachment) {
     const url = URL.createObjectURL(await item.handle.getFile());
-    window.open(url, '_blank', 'noopener,noreferrer'); setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = item.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }
 
   async function saveSettings(event: FormEvent) {
@@ -526,7 +544,7 @@ export default function ProjectWorkspace() {
         <div className="attachment-panel">
           <div className="attachment-heading"><strong>첨부파일</strong><Button variant="ghost" size="icon-xs" aria-label="파일 첨부" onClick={() => attachmentInput.current?.click()}><Plus /></Button></div>
           <input ref={attachmentInput} className="sr-only" type="file" multiple onChange={(event) => handleAttachments(event.target.files)} />
-          {attachments.length === 0 ? <p>이 항목에 첨부된 파일이 없습니다.</p> : attachments.map((item) => <button key={item.name} className="attachment-row" onClick={() => openAttachment(item)}><File /><span>{item.name}<small>{formatBytes(item.size)}</small></span></button>)}
+          {attachments.length === 0 ? <p>이 항목에 첨부된 파일이 없습니다.</p> : attachments.map((item) => <button key={item.name} className="attachment-row" title={`${item.name} 다운로드`} onClick={() => downloadAttachment(item)}><File /><span>{item.name}<small>{formatBytes(item.size)}</small></span><Download className="attachment-download" /></button>)}
         </div>
         </aside>
       </ResizablePanel>

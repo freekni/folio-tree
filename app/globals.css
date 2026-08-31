@@ -32,8 +32,8 @@ button, select { font: inherit; }
 .tree-resize-handle:hover > div, .tree-resize-handle[data-separator="active"] > div { background: #f7f6f1; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 18px; }
 .panel-heading strong { font: 600 16px Georgia, "Malgun Gothic", serif; }
-.tree { display: grid; gap: 3px; }
-.tree-row { position: relative; width: 100%; height: 34px; display: grid; grid-template-columns: 16px 16px minmax(0,1fr) 20px; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 7px; padding: 0 8px; color: #535850; background: transparent; font-size: 12px; text-align: left; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.tree { display: grid; gap: 1px; }
+.tree-row { position: relative; width: 100%; height: 31px; display: grid; grid-template-columns: 16px 16px minmax(0,1fr) auto; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 7px; padding: 0 8px; color: #535850; background: transparent; font-size: 12px; text-align: left; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 .tree-row svg { width: 15px; height: 15px; }
 .tree-row.selected { color: #234531; background: #d5dfd2; font-weight: 700; }
 .tree-row[draggable="true"] { cursor: grab; }
@@ -43,8 +43,11 @@ button, select { font: inherit; }
 .tree-row.drop-before::before, .tree-row.drop-after::after { content: ''; position: absolute; z-index: 2; right: 5px; left: 5px; height: 2px; border-radius: 2px; background: #426a50; box-shadow: 0 0 0 1px #f8faf7; }
 .tree-row.drop-before::before { top: -3px; }
 .tree-row.drop-after::after { bottom: -3px; }
-.tree-toggle { width: 18px; height: 28px; display: grid; place-items: center; }
+.tree-toggle { width: 18px; height: 25px; display: grid; place-items: center; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row-actions { min-width: 22px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.tree-attachment-badge { display: inline-flex; align-items: center; gap: 2px; color: #6f786f; font-size: 9px; font-weight: 500; }
+.tree-attachment-badge > svg { width: 12px; height: 12px; }
 .tree-more-button { width: 22px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 5px; padding: 0; color: inherit; background: transparent; opacity: 0; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease; }
 .tree-row:hover .tree-more-button, .tree-more-button[data-popup-open] { opacity: .72; }
 .tree-more-button:hover, .tree-more-button[data-popup-open] { background: #bccbbd; opacity: 1; }
@@ -99,8 +102,9 @@ button, select { font: inherit; }
 .attachment-row { width: 100%; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 6px; color: #555a53; background: transparent; text-align: left; cursor: pointer; }
 .attachment-row:hover { background: #e5e3dc; }
 .attachment-row svg { width: 15px; }
-.attachment-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.attachment-row span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .attachment-row small { display: block; color: #969990; font-size: 8px; }
+.attachment-row .attachment-download { width: 13px; flex: 0 0 auto; color: #7d827b; }
 .dialog-input { margin: 18px 0; }
 .field-label { display: grid; gap: 7px; margin-top: 18px; color: #4d524b; font-size: 12px; font-weight: 700; }
 .settings-dialog { max-width: 470px; }
