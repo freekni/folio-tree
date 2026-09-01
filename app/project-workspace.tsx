@@ -164,6 +164,7 @@ export default function ProjectWorkspace() {
   const [backupOpen, setBackupOpen] = useState(false);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreFolderName, setRestoreFolderName] = useState('');
+  const [restoreParent, setRestoreParent] = useState<FileSystemDirectoryHandle | null>(null);
   const [githubSession, setGithubSession] = useState<GitHubSession | null>(null);
   const [backupStatus, setBackupStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -670,8 +671,18 @@ export default function ProjectWorkspace() {
   function requestRestore() {
     if (!config?.githubRepository) { setSettingsOpen(true); return; }
     setRestoreFolderName(`${config.name} GitHub 복원`);
+    setRestoreParent(null);
     setBackupStatus('');
     setRestoreOpen(true);
+  }
+
+  async function chooseRestoreParent() {
+    try {
+      if (!window.showDirectoryPicker) throw new Error('Edge 또는 Chrome 최신 버전에서 열어주세요.');
+      setRestoreParent(await window.showDirectoryPicker({ mode: 'readwrite' }));
+    } catch (error) {
+      if ((error as DOMException).name !== 'AbortError') setNotice({ type: 'error', message: (error as Error).message });
+    }
   }
 
   async function startRestore(event: FormEvent) {
@@ -689,8 +700,8 @@ export default function ProjectWorkspace() {
     }
     if (!session) return;
     try {
-      if (!window.showDirectoryPicker) throw new Error('Edge 또는 Chrome 최신 버전에서 열어주세요.');
-      const parent = await window.showDirectoryPicker({ mode: 'readwrite' });
+      if (!restoreParent) throw new Error('먼저 저장할 상위 폴더를 선택해주세요.');
+      const parent = restoreParent;
       if (await childDirectory(parent, folderName)) throw new Error(`“${folderName}” 폴더가 이미 있습니다. 다른 이름을 입력해주세요.`);
       setBusy(true);
       const destination = await parent.getDirectoryHandle(folderName, { create: true });
@@ -809,7 +820,7 @@ export default function ProjectWorkspace() {
 
     <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}><DialogContent className="settings-dialog"><form onSubmit={saveSettings}><DialogHeader><DialogTitle>프로젝트 설정</DialogTitle><DialogDescription>GitHub 저장소 주소는 프로젝트의 project.json 파일에 저장됩니다.</DialogDescription></DialogHeader><label className="field-label">GitHub 저장소<Input value={repositoryInput} onChange={(event) => setRepositoryInput(event.target.value)} placeholder="https://github.com/사용자/저장소" /></label><label className="field-label">브랜치<Input value={branchInput} onChange={(event) => setBranchInput(event.target.value)} placeholder="main" /></label><DialogFooter><Button type="button" variant="outline" onClick={() => setSettingsOpen(false)}>취소</Button><Button type="submit">저장</Button></DialogFooter></form></DialogContent></Dialog>
 
-    <Dialog open={restoreOpen} onOpenChange={(open) => { if (!busy) setRestoreOpen(open); }}><DialogContent className="settings-dialog"><form onSubmit={startRestore}><DialogHeader><DialogTitle>GitHub에서 불러오기</DialogTitle><DialogDescription>{config.githubRepository}의 {config.branch} 브랜치 내용을 새 폴더에 다운로드합니다. 현재 열어 둔 로컬 프로젝트는 변경하지 않습니다.</DialogDescription></DialogHeader><label className="field-label">새 프로젝트 폴더 이름<Input value={restoreFolderName} onChange={(event) => setRestoreFolderName(event.target.value)} placeholder="GitHub 복원 프로젝트" /></label><div className="github-auth-card"><GitBranch /><div><strong>{sessionIsValid(githubSession) ? `${githubSession?.login} 계정 연결됨` : 'GitHub 계정 연결 필요'}</strong><p>저장할 상위 폴더를 선택하면 이 이름의 새 폴더가 만들어집니다.</p></div>{!sessionIsValid(githubSession) && <Button type="button" variant="outline" disabled={busy || !githubAuthConfigured()} onClick={connectGitHub}><LogIn />인증</Button>}</div>{backupStatus && <div className="backup-progress"><Download />{backupStatus}</div>}<DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setRestoreOpen(false)}>취소</Button><Button type="submit" disabled={busy || !githubAuthConfigured()}>{busy ? '다운로드 중…' : sessionIsValid(githubSession) ? '새 폴더에 불러오기' : '인증 후 불러오기'}</Button></DialogFooter></form></DialogContent></Dialog>
+    <Dialog open={restoreOpen} onOpenChange={(open) => { if (!busy) setRestoreOpen(open); }}><DialogContent className="settings-dialog"><form onSubmit={startRestore}><DialogHeader><DialogTitle>GitHub에서 불러오기</DialogTitle><DialogDescription>{config.githubRepository}의 {config.branch} 브랜치 내용을 새 폴더에 다운로드합니다. 현재 열어 둔 로컬 프로젝트는 변경하지 않습니다.</DialogDescription></DialogHeader><label className="field-label">새 프로젝트 폴더 이름<Input value={restoreFolderName} onChange={(event) => setRestoreFolderName(event.target.value)} placeholder="GitHub 복원 프로젝트" /></label><div className="restore-location"><div><strong>저장할 위치</strong><p>{restoreParent ? `${restoreParent.name} 아래` : '아직 선택되지 않았습니다.'}</p></div><Button type="button" variant="outline" size="sm" disabled={busy} onClick={chooseRestoreParent}><FolderOpen />폴더 선택</Button></div><div className="github-auth-card"><GitBranch /><div><strong>{sessionIsValid(githubSession) ? `${githubSession?.login} 계정 연결됨` : 'GitHub 계정 연결 필요'}</strong><p>선택한 위치 아래에 입력한 이름의 새 폴더가 만들어집니다.</p></div>{!sessionIsValid(githubSession) && <Button type="button" variant="outline" disabled={busy || !githubAuthConfigured()} onClick={connectGitHub}><LogIn />인증</Button>}</div>{backupStatus && <div className="backup-progress"><Download />{backupStatus}</div>}<DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setRestoreOpen(false)}>취소</Button><Button type="submit" disabled={busy || !githubAuthConfigured()}>{busy ? '다운로드 중…' : sessionIsValid(githubSession) ? '새 폴더에 불러오기' : '인증 후 불러오기'}</Button></DialogFooter></form></DialogContent></Dialog>
 
     <Dialog open={backupOpen} onOpenChange={(open) => { if (!busy) setBackupOpen(open); }}><DialogContent><form onSubmit={startBackup}><DialogHeader><DialogTitle>GitHub에 백업</DialogTitle><DialogDescription>{config.githubRepository}<br />GitHub App으로 인증하며 접근 권한은 브라우저 메모리에만 유지됩니다.</DialogDescription></DialogHeader><div className="github-auth-card"><GitBranch /><div><strong>{sessionIsValid(githubSession) ? `${githubSession?.login} 계정 연결됨` : 'GitHub 계정 연결 필요'}</strong><p>{sessionIsValid(githubSession) ? '현재 창을 닫으면 연결 정보가 삭제됩니다.' : 'GitHub에서 로그인하고 Folio Tree 접근을 승인해주세요.'}</p></div>{!sessionIsValid(githubSession) && <Button type="button" variant="outline" disabled={busy || !githubAuthConfigured()} onClick={connectGitHub}><LogIn />인증</Button>}</div>{!githubAuthConfigured() && <p className="auth-warning">GitHub App 연결 설정이 아직 배포되지 않았습니다.</p>}<p className="token-help">백업 저장소가 허용되지 않았다면 <a href={githubAppInstallUrl || '#'} target="_blank" rel="noreferrer">GitHub App 설치 설정</a>에서 해당 저장소를 선택하세요.</p>{backupStatus && <div className="backup-progress"><Upload />{backupStatus}</div>}<DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={() => setBackupOpen(false)}>취소</Button><Button type="submit" disabled={busy || !githubAuthConfigured()}>{busy ? '처리 중…' : sessionIsValid(githubSession) ? '백업 시작' : '인증 후 백업'}</Button></DialogFooter></form></DialogContent></Dialog>
     {notice && <div className={`notice ${notice.type}`}>{notice.type === 'ok' ? <Check /> : <AlertCircle />}{notice.message}</div>}
