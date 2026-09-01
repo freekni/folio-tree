@@ -25,15 +25,15 @@ button, select { font: inherit; }
 .topbar button { border-color: #52665a; background: #2d4939; color: #fff; }
 .workspace { flex: 1; min-height: 0; }
 .tree-resizable-panel, .editor-resizable-panel, .daily-resizable-panel { height: 100%; }
-.tree-panel { position: relative; height: 100%; min-height: 0; padding: 24px 14px 184px; background: #ebe9e2; overflow-y: auto; }
+.tree-panel { height: 100%; min-height: 0; display: flex; flex-direction: column; padding: 24px 14px 14px; background: #ebe9e2; overflow: hidden; }
 .tree-resize-handle { width: 6px !important; border: 0; background: #d8d6ce; cursor: col-resize; transition: background-color 120ms ease; }
 .tree-resize-handle:hover, .tree-resize-handle[data-separator="active"] { background: #829486; }
 .tree-resize-handle > div { width: 2px; height: 34px; background: #9da79f; }
 .tree-resize-handle:hover > div, .tree-resize-handle[data-separator="active"] > div { background: #f7f6f1; }
-.panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 18px; }
+.panel-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 12px; }
 .panel-heading strong { font: 600 16px Georgia, "Malgun Gothic", serif; }
-.tree { display: grid; gap: 1px; }
-.tree-row { position: relative; width: 100%; height: 31px; display: grid; grid-template-columns: 16px 16px minmax(0,1fr) auto; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 7px; padding: 0 8px; color: #535850; background: transparent; font-size: 12px; text-align: left; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.tree { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 0; overflow-y: auto; padding-bottom: 10px; }
+.tree-row { position: relative; width: 100%; height: 28px; display: grid; grid-template-columns: 16px 16px minmax(0,1fr) auto; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 7px; padding: 0 8px; color: #535850; background: transparent; font-size: 12px; text-align: left; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease; }
 .tree-row svg { width: 15px; height: 15px; }
 .tree-row.selected { color: #234531; background: #d5dfd2; font-weight: 700; }
 .tree-row[draggable="true"] { cursor: grab; }
@@ -43,12 +43,12 @@ button, select { font: inherit; }
 .tree-row.drop-before::before, .tree-row.drop-after::after { content: ''; position: absolute; z-index: 2; right: 5px; left: 5px; height: 2px; border-radius: 2px; background: #426a50; box-shadow: 0 0 0 1px #f8faf7; }
 .tree-row.drop-before::before { top: -3px; }
 .tree-row.drop-after::after { bottom: -3px; }
-.tree-toggle { width: 18px; height: 25px; display: grid; place-items: center; }
+.tree-toggle { width: 18px; height: 24px; display: grid; place-items: center; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-row-actions { min-width: 22px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
 .tree-attachment-badge { display: inline-flex; align-items: center; gap: 2px; color: #6f786f; font-size: 9px; font-weight: 500; }
 .tree-attachment-badge > svg { width: 12px; height: 12px; }
-.tree-more-button { width: 22px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 5px; padding: 0; color: inherit; background: transparent; opacity: 0; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease; }
+.tree-more-button { width: 22px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 5px; padding: 0; color: inherit; background: transparent; opacity: 0; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease; }
 .tree-row:hover .tree-more-button, .tree-more-button[data-popup-open] { opacity: .72; }
 .tree-more-button:hover, .tree-more-button[data-popup-open] { background: #bccbbd; opacity: 1; }
 .tree-action-menu { width: 156px !important; min-width: 156px !important; overflow: visible !important; background: #fffefa !important; opacity: 1 !important; }
@@ -102,7 +102,7 @@ button, select { font: inherit; }
 .editable blockquote { margin: 1em 0; padding: 12px 18px; border-left: 3px solid #d0a25a; background: #f7f2e7; }
 .editable a { color: #326548; text-decoration: underline; }
 .editable img { max-width: 100%; }
-.attachment-panel { position: absolute; left: 14px; right: 14px; bottom: 14px; max-height: 160px; overflow-y: auto; padding: 12px; border: 1px solid #d6d3ca; border-radius: 10px; background: #f4f2ec; }
+.attachment-panel { flex: 0 0 auto; max-height: 160px; overflow-y: auto; margin-top: 2px; padding: 12px; border: 1px solid #d6d3ca; border-radius: 10px; background: #f4f2ec; }
 .attachment-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 11px; }
 .attachment-panel > p { margin: 8px 2px 2px; color: #8a8e87; font-size: 10px; line-height: 1.5; }
 .attachment-row { width: 100%; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 6px; color: #555a53; background: transparent; text-align: left; cursor: pointer; }
