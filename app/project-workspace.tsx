@@ -23,9 +23,9 @@ import { authorizeGitHub, githubAppInstallUrl, githubAuthConfigured, GitHubSessi
 import { backupProject, restoreProject } from '@/lib/github-backup';
 import {
   addAttachments, Attachment, childDirectory, createChild, DAILY_NOTES_FOLDER, dailyNotePath,
-  ensureDailyMonthFolder, ensurePermission, findDailyNote, listAttachments, loadDocument,
+  ensurePermission, listAttachments, loadDailyNote, loadDocument,
   loadProjectConfig, localDateName, moveChild, organizeDailyNotes, ProjectConfig, readTree,
-  recentProject, rememberProject, renameChild, saveDocument, saveProjectConfig, setChildPosition,
+  recentProject, rememberProject, renameChild, saveDailyNote, saveDocument, saveProjectConfig, setChildPosition,
   TreeNode, validNodeName,
 } from '@/lib/project-files';
 
@@ -172,7 +172,6 @@ export default function ProjectWorkspace() {
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
   const [todaySaveState, setTodaySaveState] = useState<'saved' | 'saving' | 'error'>('saved');
   const [todayDate] = useState(() => localDateName());
-  const [todayHandle, setTodayHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [todayHtml, setTodayHtml] = useState('');
   const [documentHtml, setDocumentHtml] = useState('');
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
@@ -231,11 +230,8 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     if (!root) return;
     let cancelled = false;
-    findDailyNote(root, todayDate).then(async (handle) => {
+    loadDailyNote(root, todayDate).then(async (html) => {
       if (cancelled) return;
-      const html = handle ? await loadDocument(handle) : '';
-      if (cancelled) return;
-      setTodayHandle(handle);
       setTodayHtml(html);
       if (todayEditorRef.current) todayEditorRef.current.innerHTML = html;
     }).catch(() => undefined);
@@ -271,9 +267,8 @@ export default function ProjectWorkspace() {
     if (!await ensurePermission(handle)) throw new Error('선택한 폴더에 대한 읽기·쓰기 권한이 필요합니다.');
     const nextConfig = await loadProjectConfig(handle);
     await organizeDailyNotes(handle);
-    const existingToday = await findDailyNote(handle, todayDate);
-    setTodayHandle(existingToday);
-    setTodayHtml(existingToday ? await loadDocument(existingToday) : '');
+    const existingToday = await loadDailyNote(handle, todayDate);
+    setTodayHtml(existingToday);
     setTodaySaveState('saved');
     todayDirty.current = false;
     todayRevision.current = 0;
@@ -291,10 +286,6 @@ export default function ProjectWorkspace() {
       setExpanded(restoredExpanded);
     } else {
       const initialExpanded = new Set(['', DAILY_NOTES_FOLDER]);
-      if (existingToday) {
-        initialExpanded.add(`${DAILY_NOTES_FOLDER}/${todayYear}`);
-        initialExpanded.add(`${DAILY_NOTES_FOLDER}/${todayYear}/${todayMonth}`);
-      }
       setExpanded(initialExpanded);
     }
     await refresh(handle, restoredSelectedPath);
@@ -351,11 +342,7 @@ export default function ProjectWorkspace() {
     const html = todayEditorRef.current.innerHTML;
     const revisionAtSave = todayRevision.current;
     try {
-      const monthFolder = await ensureDailyMonthFolder(root, todayDate);
-      const existing = todayHandle || await childDirectory(monthFolder, todayDate);
-      const noteHandle = existing || await createChild(monthFolder, todayDate);
-      await saveDocument(noteHandle, todayDate, html);
-      setTodayHandle(noteHandle);
+      await saveDailyNote(root, todayDate, html);
       if (todayRevision.current === revisionAtSave) {
         todayDirty.current = false;
         setTodaySaveState('saved');
@@ -363,18 +350,6 @@ export default function ProjectWorkspace() {
       if (selected?.path === todayPath && editorRef.current && todayRevision.current === revisionAtSave) {
         editorRef.current.innerHTML = html;
         setSaveState('saved');
-      }
-      if (!existing) {
-        const nextTree = await readTree(root);
-        setTree(nextTree);
-        setSelected((current) => current ? findNode(nextTree, current.path) || nextTree : nextTree);
-        setExpanded((current) => {
-          const next = new Set(current);
-          next.add(DAILY_NOTES_FOLDER);
-          next.add(`${DAILY_NOTES_FOLDER}/${todayYear}`);
-          next.add(`${DAILY_NOTES_FOLDER}/${todayYear}/${todayMonth}`);
-          return next;
-        });
       }
     } catch {
       setTodaySaveState('error');
