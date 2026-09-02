@@ -3,7 +3,7 @@
 import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useGroupRef } from 'react-resizable-panels';
 import {
-  AlertCircle, Bold, CalendarDays, Check, ChevronDown, ChevronRight, CloudUpload, Download, File,
+  AlertCircle, Bold, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CloudUpload, Download, File,
   Folder, FolderOpen, FolderPlus, Italic, Link, List, ListOrdered, MoreHorizontal,
   GitBranch, LogIn, Paperclip, Pencil, Plus, Redo2, Settings, Settings2, Trash2, Underline, Undo2, Upload,
 } from 'lucide-react';
@@ -23,7 +23,7 @@ import { authorizeGitHub, githubAppInstallUrl, githubAuthConfigured, GitHubSessi
 import { backupProject, restoreProject } from '@/lib/github-backup';
 import {
   addAttachments, Attachment, childDirectory, createChild, DAILY_NOTES_FOLDER, dailyNotePath,
-  ensurePermission, listAttachments, loadDailyNote, loadDocument,
+  ensurePermission, listAttachments, loadDailyMonthNotes, loadDailyNote, loadDocument,
   loadProjectConfig, localDateName, moveChild, organizeDailyNotes, ProjectConfig, readTree,
   recentProject, rememberProject, renameChild, saveDailyNote, saveDocument, saveProjectConfig, setChildPosition,
   TreeNode, validNodeName,
@@ -78,6 +78,19 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function shiftMonth(month: string, offset: number) {
+  const date = new Date(`${month}-01T00:00:00`);
+  date.setMonth(date.getMonth() + offset);
+  return localDateName(date).slice(0, 7);
+}
+
+function monthDays(month: string) {
+  const first = new Date(`${month}-01T00:00:00`);
+  const start = first.getDay();
+  const count = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  return Array.from({ length: start + count }, (_, index) => index < start ? null : index - start + 1);
 }
 
 function TreeItem({
@@ -172,6 +185,9 @@ export default function ProjectWorkspace() {
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
   const [todaySaveState, setTodaySaveState] = useState<'saved' | 'saving' | 'error'>('saved');
   const [todayDate] = useState(() => localDateName());
+  const [dailySelectedDate, setDailySelectedDate] = useState(() => localDateName());
+  const [calendarMonth, setCalendarMonth] = useState(() => localDateName().slice(0, 7));
+  const [dailyMonthNotes, setDailyMonthNotes] = useState<Record<string, string>>({});
   const [todayHtml, setTodayHtml] = useState('');
   const [documentHtml, setDocumentHtml] = useState('');
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
@@ -230,13 +246,17 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     if (!root) return;
     let cancelled = false;
-    loadDailyNote(root, todayDate).then(async (html) => {
+    loadDailyNote(root, dailySelectedDate).then(async (html) => {
       if (cancelled) return;
       setTodayHtml(html);
       if (todayEditorRef.current) todayEditorRef.current.innerHTML = html;
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [root, todayDate]);
+  }, [root, dailySelectedDate]);
+  useEffect(() => {
+    if (!root) return;
+    loadDailyMonthNotes(root, calendarMonth).then(setDailyMonthNotes).catch(() => setDailyMonthNotes({}));
+  }, [root, calendarMonth]);
   useEffect(() => {
     for (const editor of [editorRef.current, todayEditorRef.current]) {
       if (!editor) continue;
@@ -342,7 +362,8 @@ export default function ProjectWorkspace() {
     const html = todayEditorRef.current.innerHTML;
     const revisionAtSave = todayRevision.current;
     try {
-      await saveDailyNote(root, todayDate, html);
+      await saveDailyNote(root, dailySelectedDate, html);
+      setDailyMonthNotes((current) => ({ ...current, [dailySelectedDate]: html }));
       if (todayRevision.current === revisionAtSave) {
         todayDirty.current = false;
         setTodaySaveState('saved');
@@ -696,7 +717,8 @@ export default function ProjectWorkspace() {
     : saveState === 'saving' || todaySaveState === 'saving' ? 'saving' : 'saved';
   const todayLabel = new Intl.DateTimeFormat('ko-KR', {
     month: 'long', day: 'numeric', weekday: 'short',
-  }).format(new Date(`${todayDate}T00:00:00`));
+  }).format(new Date(`${dailySelectedDate}T00:00:00`));
+  const calendarLabel = new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long' }).format(new Date(`${calendarMonth}-01T00:00:00`));
 
   if (!root || !tree || !selected || !config) {
     return <main className="welcome-shell">
@@ -773,7 +795,9 @@ export default function ProjectWorkspace() {
             <div className="today-title"><CalendarDays /><div><p className="eyebrow">DAILY CHECK</p><h2>오늘 확인사항</h2></div></div>
             <span className={`today-save-state ${todaySaveState}`}>{todaySaveState === 'saved' ? '저장됨' : todaySaveState === 'saving' ? '저장 중…' : '저장 실패'}</span>
           </header>
-          <div className="today-date"><strong>{todayLabel}</strong><span>{todayDate}</span></div>
+          <div className="calendar-head"><button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, -1))} aria-label="이전 달"><ChevronLeft /></button><strong>{calendarLabel}</strong><button type="button" onClick={() => setCalendarMonth((month) => shiftMonth(month, 1))} aria-label="다음 달"><ChevronRight /></button></div>
+          <div className="calendar-grid"><div className="calendar-weekdays">{['일','월','화','수','목','금','토'].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-days">{monthDays(calendarMonth).map((day, index) => { if (!day) return <span key={`blank-${index}`} />; const date = `${calendarMonth}-${String(day).padStart(2, '0')}`; return <button key={date} type="button" className={`${date === dailySelectedDate ? 'selected' : ''} ${date === todayDate ? 'today' : ''} ${dailyMonthNotes[date]?.trim() ? 'has-note' : ''}`} onClick={() => setDailySelectedDate(date)}>{day}</button>; })}</div></div>
+          <div className="today-date"><strong>{todayLabel}</strong><span>{dailySelectedDate}</span></div>
           <div className="today-body">
             <div
               ref={todayEditorRef}
@@ -784,7 +808,7 @@ export default function ProjectWorkspace() {
               data-placeholder="오늘 확인하거나 기억할 내용을 입력하세요…"
             />
           </div>
-          <footer className="today-footer">{DAILY_NOTES_FOLDER} / {todayYear} / {todayMonth} / {todayDate}에 자동 저장됩니다.</footer>
+          <footer className="today-footer">내용을 입력한 날짜만 {DAILY_NOTES_FOLDER}의 월별 파일에 저장됩니다.</footer>
         </aside>
       </ResizablePanel>
     </ResizablePanelGroup>
