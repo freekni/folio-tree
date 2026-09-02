@@ -23,7 +23,7 @@ import { authorizeGitHub, githubAppInstallUrl, githubAuthConfigured, GitHubSessi
 import { backupProject, restoreProject } from '@/lib/github-backup';
 import {
   addAttachments, Attachment, childDirectory, createChild, DAILY_NOTES_FOLDER, dailyNotePath,
-  ensurePermission, listAttachments, loadDailyMonthNotes, loadDailyNote, loadDocument,
+  ensurePermission, listAttachments, listDailyMonths, loadDailyMonthNotes, loadDailyNote, loadDocument,
   loadProjectConfig, localDateName, moveChild, organizeDailyNotes, ProjectConfig, readTree,
   recentProject, rememberProject, renameChild, saveDailyNote, saveDocument, saveProjectConfig, setChildPosition,
   TreeNode, validNodeName,
@@ -80,6 +80,11 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function htmlToPlainText(html: string) {
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  return (parsed.body.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
 function shiftMonth(month: string, offset: number) {
   const date = new Date(`${month}-01T00:00:00`);
   date.setMonth(date.getMonth() + offset);
@@ -95,20 +100,24 @@ function monthDays(month: string) {
 
 function TreeItem({
   node, depth, selectedPath, expanded, draggingPath, dropTarget,
-  onSelect, onToggle, onAction, onDragStart, onDragOver, onDrop, onDragEnd,
+  dailyMonths, selectedMonth,
+  onSelect, onToggle, onAction, onDragStart, onDragOver, onDrop, onDragEnd, onSelectMonth,
 }: {
   node: TreeNode; depth: number; selectedPath: string; expanded: Set<string>;
   draggingPath: string | null; dropTarget: DropTarget;
+  dailyMonths: string[]; selectedMonth: string | null;
   onSelect: (node: TreeNode) => void; onToggle: (path: string) => void;
   onAction: (action: NodeAction) => void;
   onDragStart: (node: TreeNode, event: DragEvent<HTMLElement>) => void;
   onDragOver: (node: TreeNode, event: DragEvent<HTMLElement>) => void;
   onDrop: (node: TreeNode, event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
+  onSelectMonth: (month: string) => void;
 }) {
   const isExpanded = expanded.has(node.path);
-  const hasChildren = node.children.length > 0;
   const isDailyNotesRoot = node.path === DAILY_NOTES_FOLDER;
+  const hasVirtualMonths = isDailyNotesRoot && dailyMonths.length > 0;
+  const hasChildren = node.children.length > 0 || hasVirtualMonths;
   return <>
     <ContextMenu>
       <ContextMenuTrigger
@@ -154,7 +163,19 @@ function TreeItem({
         {depth > 0 && !isDailyNotesRoot && <ContextMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
-    {isExpanded && node.children.map((child) => <TreeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} onSelect={onSelect} onToggle={onToggle} onAction={onAction} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} />)}
+    {isExpanded && node.children.map((child) => <TreeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} dailyMonths={dailyMonths} selectedMonth={selectedMonth} onSelect={onSelect} onToggle={onToggle} onAction={onAction} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} onSelectMonth={onSelectMonth} />)}
+    {isExpanded && isDailyNotesRoot && dailyMonths.map((month) => (
+      <div
+        key={`month-${month}`}
+        className={`tree-row ${selectedMonth === month ? 'selected' : ''}`}
+        style={{ paddingLeft: 8 + (depth + 1) * 20 }}
+        onClick={() => onSelectMonth(month)}
+      >
+        <span className="tree-toggle" />
+        <CalendarDays />
+        <span className="tree-name">{month}</span>
+      </div>
+    ))}
   </>;
 }
 
@@ -188,6 +209,9 @@ export default function ProjectWorkspace() {
   const [dailySelectedDate, setDailySelectedDate] = useState(() => localDateName());
   const [calendarMonth, setCalendarMonth] = useState(() => localDateName().slice(0, 7));
   const [dailyMonthNotes, setDailyMonthNotes] = useState<Record<string, string>>({});
+  const [dailyMonths, setDailyMonths] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [monthNotes, setMonthNotes] = useState<Record<string, string>>({});
   const [todayHtml, setTodayHtml] = useState('');
   const [documentHtml, setDocumentHtml] = useState('');
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
@@ -292,6 +316,9 @@ export default function ProjectWorkspace() {
     setTodaySaveState('saved');
     todayDirty.current = false;
     todayRevision.current = 0;
+    setSelectedMonth(null);
+    setMonthNotes({});
+    setDailyMonths(await listDailyMonths(handle));
     let restoredExpanded: Set<string> | null = null;
     let restoredSelectedPath = '';
     try {
@@ -364,6 +391,7 @@ export default function ProjectWorkspace() {
     try {
       await saveDailyNote(root, dailySelectedDate, html);
       setDailyMonthNotes((current) => ({ ...current, [dailySelectedDate]: html }));
+      if (!dailyMonths.includes(dailySelectedDate.slice(0, 7))) setDailyMonths(await listDailyMonths(root));
       if (todayRevision.current === revisionAtSave) {
         todayDirty.current = false;
         setTodaySaveState('saved');
@@ -393,12 +421,25 @@ export default function ProjectWorkspace() {
   async function selectNode(node: TreeNode) {
     await saveCurrent();
     await saveToday();
+    setSelectedMonth(null);
     setSelected(node);
     const html = await loadDocument(node.handle);
     setDocumentHtml(html);
     if (editorRef.current) editorRef.current.innerHTML = html;
     if (node.path === todayPath && todayEditorRef.current) todayEditorRef.current.innerHTML = html;
     setAttachments(await listAttachments(node.handle));
+  }
+
+  async function selectMonth(month: string) {
+    if (!root) return;
+    await saveCurrent();
+    await saveToday();
+    setSelectedMonth(month);
+    try {
+      setMonthNotes(await loadDailyMonthNotes(root, month));
+    } catch {
+      setMonthNotes({});
+    }
   }
 
   function openNodeAction(action: NodeAction) {
@@ -760,7 +801,7 @@ export default function ProjectWorkspace() {
       <ResizablePanel id="tree" defaultSize="292px" minSize="220px" maxSize="520px" className="tree-resizable-panel">
         <aside className="tree-panel">
         <div className="panel-heading"><div><p className="eyebrow">PROJECT</p><strong>{config.name}</strong></div><Button variant="ghost" size="icon-sm" aria-label="하위 항목 추가" onClick={() => openNodeAction({ kind: 'add', node: tree })}><Plus /></Button></div>
-        <nav aria-label="프로젝트 항목" className="tree"><TreeItem node={tree} depth={0} selectedPath={selected.path} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} onSelect={selectNode} onToggle={(path) => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })} onAction={openNodeAction} onDragStart={startTreeDrag} onDragOver={dragOverTreeNode} onDrop={dropTreeNode} onDragEnd={endTreeDrag} /></nav>
+        <nav aria-label="프로젝트 항목" className="tree"><TreeItem node={tree} depth={0} selectedPath={selected.path} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} dailyMonths={dailyMonths} selectedMonth={selectedMonth} onSelect={selectNode} onToggle={(path) => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })} onAction={openNodeAction} onDragStart={startTreeDrag} onDragOver={dragOverTreeNode} onDrop={dropTreeNode} onDragEnd={endTreeDrag} onSelectMonth={selectMonth} /></nav>
         <div className="attachment-panel">
           <div className="attachment-heading"><strong>첨부파일</strong><Button variant="ghost" size="icon-xs" aria-label="파일 첨부" onClick={() => attachmentInput.current?.click()}><Plus /></Button></div>
           <input ref={attachmentInput} className="sr-only" type="file" multiple onChange={(event) => handleAttachments(event.target.files)} />
@@ -772,6 +813,20 @@ export default function ProjectWorkspace() {
       <ResizableHandle withHandle className="tree-resize-handle" aria-label="트리 영역 너비 조절" />
 
       <ResizablePanel id="editor" minSize="420px" className="editor-resizable-panel">
+        {selectedMonth ? (
+        <article className="editor-panel">
+        <div className="document-head"><div><p className="breadcrumb">{config.name} / {DAILY_NOTES_FOLDER}</p><h2>{selectedMonth}</h2></div></div>
+        <div className="paper-wrap">
+          <div className="paper month-list">
+            {Object.keys(monthNotes).length === 0
+              ? <p className="month-list-empty">이 달에 기록된 확인사항이 없습니다.</p>
+              : Object.keys(monthNotes).sort().map((date) => (
+                  <p key={date}><strong>{date}</strong> : {htmlToPlainText(monthNotes[date])}</p>
+                ))}
+          </div>
+        </div>
+        </article>
+        ) : (
         <article className="editor-panel">
         <div className="document-head"><div><p className="breadcrumb">{selected.path ? `${config.name} / ${selected.path.split('/').join(' / ')}` : config.name}</p><h2>{selected.name}</h2></div><div className="document-actions"><Button variant="outline" size="sm" onClick={() => attachmentInput.current?.click()}><Paperclip />첨부</Button><span className="file-label">content.html</span></div></div>
         <div className="toolbar" aria-label="문서 서식">
@@ -785,6 +840,7 @@ export default function ProjectWorkspace() {
         <div className="paper-wrap"><div ref={editorRef} className="paper editable" contentEditable suppressContentEditableWarning onInput={scheduleSave} data-placeholder="이 항목의 내용을 입력하세요…" /></div>
         <footer className="editor-footer"><span>{config.lastBackupAt ? `마지막 GitHub 백업: ${new Date(config.lastBackupAt).toLocaleString('ko-KR')}` : 'GitHub 백업 기록 없음'}</span><span>첨부파일 {attachments.length}개</span></footer>
         </article>
+        )}
       </ResizablePanel>
 
       <ResizableHandle withHandle className="tree-resize-handle" aria-label="오늘 확인사항 영역 너비 조절" />

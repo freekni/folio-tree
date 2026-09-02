@@ -238,6 +238,24 @@ export async function saveDailyNote(root: FileSystemDirectoryHandle, dateName: s
   await writeText(dailyFolder, dailyMonthFileName(month), `${JSON.stringify(notes, null, 2)}\n`);
 }
 
+function parseDailyMonthFileName(name: string) {
+  if (!name.startsWith(DAILY_MONTH_FILE_PREFIX) || !name.endsWith('.json')) return null;
+  const month = name.slice(DAILY_MONTH_FILE_PREFIX.length, name.length - '.json'.length);
+  return /^\d{4}-\d{2}$/.test(month) ? month : null;
+}
+
+export async function listDailyMonths(root: FileSystemDirectoryHandle): Promise<string[]> {
+  const dailyFolder = await childDirectory(root, DAILY_NOTES_FOLDER);
+  if (!dailyFolder) return [];
+  const months: string[] = [];
+  for await (const [name, entry] of (dailyFolder as DirectoryEntries).entries()) {
+    if (entry.kind !== 'file') continue;
+    const month = parseDailyMonthFileName(name);
+    if (month) months.push(month);
+  }
+  return months.sort((a, b) => b.localeCompare(a));
+}
+
 export async function organizeDailyNotes(root: FileSystemDirectoryHandle) {
   const dailyFolder = await ensureDailyNotesFolder(root);
   const dates: { parent: FileSystemDirectoryHandle; name: string; handle: FileSystemDirectoryHandle }[] = [];
