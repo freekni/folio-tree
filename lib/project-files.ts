@@ -40,6 +40,8 @@ const CONTENT_FILE = 'content.html';
 const ORDER_FILE = '.folio-order.json';
 const DB_NAME = 'folio-tree';
 export const DAILY_NOTES_FOLDER = '일별 확인사항';
+const DAILY_MONTH_FILE_PREFIX = '.folio-daily-';
+type DailyNotes = Record<string, string>;
 
 export async function ensurePermission(handle: FileSystemDirectoryHandle, request = true) {
   const permissionHandle = handle as PermissionHandle;
@@ -206,41 +208,52 @@ function dailyDateParts(dateName: string) {
 }
 
 export function dailyNotePath(dateName: string) {
-  const { year, month } = dailyDateParts(dateName);
-  return `${DAILY_NOTES_FOLDER}/${year}/${month}/${dateName}`;
+  return `${DAILY_NOTES_FOLDER}/${dailyDateParts(dateName).month}`;
 }
 
-export async function findDailyNote(root: FileSystemDirectoryHandle, dateName: string) {
-  const { year, month } = dailyDateParts(dateName);
+function dailyMonthFileName(month: string) { return `${DAILY_MONTH_FILE_PREFIX}${month}.json`; }
+
+async function readDailyMonth(root: FileSystemDirectoryHandle, month: string): Promise<DailyNotes> {
   const dailyFolder = await childDirectory(root, DAILY_NOTES_FOLDER);
-  if (!dailyFolder) return null;
-  const yearFolder = await childDirectory(dailyFolder, year);
-  if (!yearFolder) return null;
-  const monthFolder = await childDirectory(yearFolder, month);
-  if (!monthFolder) return null;
-  return childDirectory(monthFolder, dateName);
+  if (!dailyFolder) return {};
+  const raw = await readText(dailyFolder, dailyMonthFileName(month));
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([date, html]) => /^\d{4}-\d{2}-\d{2}$/.test(date) && typeof html === 'string'));
+  } catch { return {}; }
 }
 
-export async function ensureDailyMonthFolder(root: FileSystemDirectoryHandle, dateName: string) {
-  const { year, month } = dailyDateParts(dateName);
+export async function loadDailyNote(root: FileSystemDirectoryHandle, dateName: string) {
+  return (await readDailyMonth(root, dailyDateParts(dateName).month))[dateName] || '';
+}
+
+export async function saveDailyNote(root: FileSystemDirectoryHandle, dateName: string, html: string) {
+  const { month } = dailyDateParts(dateName);
   const dailyFolder = await ensureDailyNotesFolder(root);
-  const yearFolder = await childDirectory(dailyFolder, year) || await createChild(dailyFolder, year);
-  return await childDirectory(yearFolder, month) || await createChild(yearFolder, month);
+  const notes = await readDailyMonth(root, month);
+  if (html.trim()) notes[dateName] = html;
+  else delete notes[dateName];
+  await writeText(dailyFolder, dailyMonthFileName(month), `${JSON.stringify(notes, null, 2)}\n`);
 }
 
 export async function organizeDailyNotes(root: FileSystemDirectoryHandle) {
   const dailyFolder = await ensureDailyNotesFolder(root);
-  const legacyDates: string[] = [];
-  for await (const [name, entry] of (dailyFolder as DirectoryEntries).entries()) {
-    if (entry.kind === 'directory' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(name)) {
-      legacyDates.push(name);
+  const dates: { parent: FileSystemDirectoryHandle; name: string; handle: FileSystemDirectoryHandle }[] = [];
+  async function visit(parent: FileSystemDirectoryHandle) {
+    for await (const [name, entry] of (parent as DirectoryEntries).entries()) {
+      if (entry.kind !== 'directory') continue;
+      const handle = entry as FileSystemDirectoryHandle;
+      if (/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(name)) dates.push({ parent, name, handle });
+      else await visit(handle);
     }
   }
-  for (const dateName of legacyDates) {
-    const monthFolder = await ensureDailyMonthFolder(root, dateName);
-    if (!await childDirectory(monthFolder, dateName)) {
-      await moveChild(dailyFolder, dateName, monthFolder);
-    }
+  await visit(dailyFolder);
+  for (const date of dates) {
+    const html = await loadDocument(date.handle);
+    if (html.trim()) await saveDailyNote(root, date.name, html);
+    await date.parent.removeEntry(date.name, { recursive: true });
   }
 }
 
