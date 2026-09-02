@@ -213,7 +213,7 @@ export function dailyNotePath(dateName: string) {
 
 function dailyMonthFileName(month: string) { return `${DAILY_MONTH_FILE_PREFIX}${month}.json`; }
 
-async function readDailyMonth(root: FileSystemDirectoryHandle, month: string): Promise<DailyNotes> {
+export async function loadDailyMonthNotes(root: FileSystemDirectoryHandle, month: string): Promise<DailyNotes> {
   const dailyFolder = await childDirectory(root, DAILY_NOTES_FOLDER);
   if (!dailyFolder) return {};
   const raw = await readText(dailyFolder, dailyMonthFileName(month));
@@ -226,13 +226,13 @@ async function readDailyMonth(root: FileSystemDirectoryHandle, month: string): P
 }
 
 export async function loadDailyNote(root: FileSystemDirectoryHandle, dateName: string) {
-  return (await readDailyMonth(root, dailyDateParts(dateName).month))[dateName] || '';
+  return (await loadDailyMonthNotes(root, dailyDateParts(dateName).month))[dateName] || '';
 }
 
 export async function saveDailyNote(root: FileSystemDirectoryHandle, dateName: string, html: string) {
   const { month } = dailyDateParts(dateName);
   const dailyFolder = await ensureDailyNotesFolder(root);
-  const notes = await readDailyMonth(root, month);
+  const notes = await loadDailyMonthNotes(root, month);
   if (html.trim()) notes[dateName] = html;
   else delete notes[dateName];
   await writeText(dailyFolder, dailyMonthFileName(month), `${JSON.stringify(notes, null, 2)}\n`);
