@@ -1,11 +1,11 @@
 'use client';
 
-import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { DragEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGroupRef } from 'react-resizable-panels';
 import {
   AlertCircle, Bold, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CloudUpload, Download, File,
   Folder, FolderOpen, FolderPlus, Italic, Link, List, ListOrdered, MoreHorizontal,
-  GitBranch, LogIn, Paperclip, Pencil, Plus, Redo2, Settings, Settings2, Trash2, Underline, Undo2, Upload,
+  GitBranch, LogIn, Paperclip, Pencil, Plus, Redo2, Search, Settings, Settings2, Trash2, Underline, Undo2, Upload, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -85,6 +85,45 @@ function htmlToPlainText(html: string) {
   return (parsed.body.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
+// Names that contain the query, every ancestor leading down to one — so a match
+// inside a collapsed folder is still reachable — and the subtree under a match.
+function searchTree(root: TreeNode, query: string) {
+  const matched = new Set<string>();
+  const visible = new Set<string>();
+  const expand = new Set<string>();
+
+  function keepSubtree(node: TreeNode) {
+    visible.add(node.path);
+    node.children.forEach(keepSubtree);
+  }
+
+  function visit(node: TreeNode, ancestors: string[]) {
+    if (node.path && node.name.toLowerCase().includes(query)) {
+      matched.add(node.path);
+      keepSubtree(node);
+      for (const ancestor of ancestors) {
+        visible.add(ancestor);
+        expand.add(ancestor);
+      }
+    }
+    const nested = [...ancestors, node.path];
+    for (const child of node.children) visit(child, nested);
+  }
+
+  visit(root, []);
+  return { matched, visible, expand };
+}
+
+function HighlightedName({ name, query }: { name: string; query: string }) {
+  const index = query ? name.toLowerCase().indexOf(query) : -1;
+  if (index < 0) return <>{name}</>;
+  return <>
+    {name.slice(0, index)}
+    <mark>{name.slice(index, index + query.length)}</mark>
+    {name.slice(index + query.length)}
+  </>;
+}
+
 function shiftMonth(month: string, offset: number) {
   const date = new Date(`${month}-01T00:00:00`);
   date.setMonth(date.getMonth() + offset);
@@ -100,12 +139,13 @@ function monthDays(month: string) {
 
 function TreeItem({
   node, depth, selectedPath, expanded, draggingPath, dropTarget,
-  dailyMonths, selectedMonth,
+  dailyMonths, selectedMonth, visiblePaths, query,
   onSelect, onToggle, onAction, onDragStart, onDragOver, onDrop, onDragEnd, onSelectMonth,
 }: {
   node: TreeNode; depth: number; selectedPath: string; expanded: Set<string>;
   draggingPath: string | null; dropTarget: DropTarget;
   dailyMonths: string[]; selectedMonth: string | null;
+  visiblePaths: Set<string> | null; query: string;
   onSelect: (node: TreeNode) => void; onToggle: (path: string) => void;
   onAction: (action: NodeAction) => void;
   onDragStart: (node: TreeNode, event: DragEvent<HTMLElement>) => void;
@@ -117,7 +157,8 @@ function TreeItem({
   const isExpanded = expanded.has(node.path);
   const isDailyNotesRoot = node.path === DAILY_NOTES_FOLDER;
   const hasVirtualMonths = isDailyNotesRoot && dailyMonths.length > 0;
-  const hasChildren = node.children.length > 0 || hasVirtualMonths;
+  const children = visiblePaths ? node.children.filter((child) => visiblePaths.has(child.path)) : node.children;
+  const hasChildren = children.length > 0 || hasVirtualMonths;
   return <>
     <ContextMenu>
       <ContextMenuTrigger
@@ -136,7 +177,7 @@ function TreeItem({
           {hasChildren ? (isExpanded ? <ChevronDown /> : <ChevronRight />) : null}
         </span>
         {isExpanded && hasChildren ? <FolderOpen /> : <Folder />}
-        <span className="tree-name">{node.name}</span>
+        <span className="tree-name"><HighlightedName name={node.name} query={query} /></span>
         <span className="tree-row-actions">
           {node.attachmentCount > 0 && <span className="tree-attachment-badge" title={`첨부파일 ${node.attachmentCount}개`}><Paperclip /><span>{node.attachmentCount}</span></span>}
           <DropdownMenu>
@@ -163,7 +204,7 @@ function TreeItem({
         {depth > 0 && !isDailyNotesRoot && <ContextMenuItem variant="destructive" onClick={() => onAction({ kind: 'delete', node })}><Trash2 />삭제</ContextMenuItem>}
       </ContextMenuContent>
     </ContextMenu>
-    {isExpanded && node.children.map((child) => <TreeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} dailyMonths={dailyMonths} selectedMonth={selectedMonth} onSelect={onSelect} onToggle={onToggle} onAction={onAction} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} onSelectMonth={onSelectMonth} />)}
+    {isExpanded && children.map((child) => <TreeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} dailyMonths={dailyMonths} selectedMonth={selectedMonth} visiblePaths={visiblePaths} query={query} onSelect={onSelect} onToggle={onToggle} onAction={onAction} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} onSelectMonth={onSelectMonth} />)}
     {isExpanded && isDailyNotesRoot && dailyMonths.map((month) => (
       <div
         key={`month-${month}`}
@@ -173,7 +214,7 @@ function TreeItem({
       >
         <span className="tree-toggle" />
         <CalendarDays />
-        <span className="tree-name">{month}</span>
+        <span className="tree-name"><HighlightedName name={month} query={query} /></span>
       </div>
     ))}
   </>;
@@ -214,6 +255,7 @@ export default function ProjectWorkspace() {
   const [monthNotes, setMonthNotes] = useState<Record<string, string>>({});
   const [todayHtml, setTodayHtml] = useState('');
   const [documentHtml, setDocumentHtml] = useState('');
+  const [treeQuery, setTreeQuery] = useState('');
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -753,6 +795,28 @@ export default function ProjectWorkspace() {
     }
   }
 
+  const searchQuery = treeQuery.trim().toLowerCase();
+  const search = useMemo(() => tree && searchQuery ? searchTree(tree, searchQuery) : null, [tree, searchQuery]);
+  const visibleMonths = useMemo(
+    () => searchQuery ? dailyMonths.filter((month) => month.includes(searchQuery)) : dailyMonths,
+    [dailyMonths, searchQuery],
+  );
+  const visiblePaths = useMemo(() => {
+    if (!search) return null;
+    const paths = new Set(search.visible);
+    if (visibleMonths.length > 0) paths.add(DAILY_NOTES_FOLDER);
+    return paths;
+  }, [search, visibleMonths]);
+  // While filtering, the path down to every hit is forced open on top of whatever
+  // the user had expanded, so hits inside collapsed folders still show up.
+  const visibleExpanded = useMemo(() => {
+    if (!search) return expanded;
+    const paths = new Set([...expanded, ...search.expand]);
+    if (visibleMonths.length > 0) paths.add('').add(DAILY_NOTES_FOLDER);
+    return paths;
+  }, [expanded, search, visibleMonths]);
+  const matchCount = (search?.matched.size || 0) + (searchQuery ? visibleMonths.length : 0);
+
   const overallSaveState = saveState === 'error' || todaySaveState === 'error'
     ? 'error'
     : saveState === 'saving' || todaySaveState === 'saving' ? 'saving' : 'saved';
@@ -801,7 +865,22 @@ export default function ProjectWorkspace() {
       <ResizablePanel id="tree" defaultSize="292px" minSize="220px" maxSize="520px" className="tree-resizable-panel">
         <aside className="tree-panel">
         <div className="panel-heading"><div><p className="eyebrow">PROJECT</p><strong>{config.name}</strong></div><Button variant="ghost" size="icon-sm" aria-label="하위 항목 추가" onClick={() => openNodeAction({ kind: 'add', node: tree })}><Plus /></Button></div>
-        <nav aria-label="프로젝트 항목" className="tree"><TreeItem node={tree} depth={0} selectedPath={selected.path} expanded={expanded} draggingPath={draggingPath} dropTarget={dropTarget} dailyMonths={dailyMonths} selectedMonth={selectedMonth} onSelect={selectNode} onToggle={(path) => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })} onAction={openNodeAction} onDragStart={startTreeDrag} onDragOver={dragOverTreeNode} onDrop={dropTreeNode} onDragEnd={endTreeDrag} onSelectMonth={selectMonth} /></nav>
+        <div className="tree-search">
+          <Search />
+          <input
+            type="text"
+            value={treeQuery}
+            placeholder="항목 이름 검색"
+            aria-label="프로젝트 항목 검색"
+            onChange={(event) => setTreeQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Escape') setTreeQuery(''); }}
+          />
+          {treeQuery && <button type="button" className="tree-search-clear" aria-label="검색어 지우기" onClick={() => setTreeQuery('')}><X /></button>}
+        </div>
+        <nav aria-label="프로젝트 항목" className="tree">
+          <TreeItem node={tree} depth={0} selectedPath={selected.path} expanded={visibleExpanded} draggingPath={draggingPath} dropTarget={dropTarget} dailyMonths={visibleMonths} selectedMonth={selectedMonth} visiblePaths={visiblePaths} query={searchQuery} onSelect={selectNode} onToggle={(path) => setExpanded((current) => { const next = new Set(current); next.has(path) ? next.delete(path) : next.add(path); return next; })} onAction={openNodeAction} onDragStart={startTreeDrag} onDragOver={dragOverTreeNode} onDrop={dropTreeNode} onDragEnd={endTreeDrag} onSelectMonth={selectMonth} />
+          {searchQuery && matchCount === 0 && <p className="tree-empty">“{treeQuery.trim()}”와 일치하는 항목이 없습니다.</p>}
+        </nav>
         <div className="attachment-panel">
           <div className="attachment-heading"><strong>첨부파일</strong><Button variant="ghost" size="icon-xs" aria-label="파일 첨부" onClick={() => attachmentInput.current?.click()}><Plus /></Button></div>
           <input ref={attachmentInput} className="sr-only" type="file" multiple onChange={(event) => handleAttachments(event.target.files)} />
