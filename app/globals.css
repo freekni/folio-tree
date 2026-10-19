@@ -129,12 +129,17 @@ button, select { font: inherit; }
 .attachment-panel { flex: 0 0 auto; max-height: 160px; overflow-y: auto; margin-top: 2px; padding: 12px; border: 1px solid #d6d3ca; border-radius: 10px; background: #f4f2ec; }
 .attachment-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 11px; }
 .attachment-panel > p { margin: 8px 2px 2px; color: #8a8e87; font-size: 10px; line-height: 1.5; }
-.attachment-row { width: 100%; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 6px; color: #555a53; background: transparent; text-align: left; cursor: pointer; }
+.attachment-row { width: 100%; display: flex; align-items: center; border-radius: 6px; }
 .attachment-row:hover { background: #e5e3dc; }
-.attachment-row svg { width: 15px; }
-.attachment-row span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
-.attachment-row small { display: block; color: #969990; font-size: 8px; }
-.attachment-row .attachment-download { width: 13px; flex: 0 0 auto; color: #7d827b; }
+.attachment-open { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 6px; color: #555a53; background: transparent; text-align: left; cursor: pointer; }
+.attachment-open svg { width: 15px; }
+.attachment-open span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.attachment-open small { display: block; color: #969990; font-size: 8px; }
+.attachment-open .attachment-download { width: 13px; flex: 0 0 auto; color: #7d827b; }
+.attachment-delete { flex: 0 0 auto; width: 22px; height: 24px; display: grid; place-items: center; margin-right: 4px; border: 0; border-radius: 5px; padding: 0; color: #857069; background: transparent; opacity: 0; cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
+.attachment-row:hover .attachment-delete, .attachment-delete:focus-visible { opacity: 1; }
+.attachment-delete:hover { color: #a2402f; background: #e7d7d2; }
+.attachment-delete svg { width: 13px; height: 13px; }
 .dialog-input { margin: 18px 0; }
 .field-label { display: grid; gap: 7px; margin-top: 18px; color: #4d524b; font-size: 12px; font-weight: 700; }
 .settings-dialog { max-width: 470px; }

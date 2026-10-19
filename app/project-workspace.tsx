@@ -25,8 +25,8 @@ import {
   addAttachments, Attachment, childDirectory, createChild, DAILY_NOTES_FOLDER, dailyNotePath,
   ensurePermission, listAttachments, listDailyMonths, loadDailyMonthNotes, loadDailyNote, loadDocument,
   loadProjectConfig, localDateName, moveChild, organizeDailyNotes, ProjectConfig, readTree,
-  recentProject, rememberProject, renameChild, saveDailyNote, saveDocument, saveProjectConfig, setChildPosition,
-  TreeNode, validNodeName,
+  recentProject, rememberProject, removeAttachment, renameChild, saveDailyNote, saveDocument, saveProjectConfig,
+  setChildPosition, TreeNode, validNodeName,
 } from '@/lib/project-files';
 
 type NodeAction = { kind: 'add' | 'rename' | 'delete'; node: TreeNode } | null;
@@ -227,6 +227,7 @@ export default function ProjectWorkspace() {
   const [config, setConfig] = useState<ProjectConfig | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['']));
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentAction, setAttachmentAction] = useState<Attachment | null>(null);
   const [recent, setRecent] = useState<FileSystemDirectoryHandle | null>(null);
   const [nodeAction, setNodeAction] = useState<NodeAction>(null);
   const [nodeName, setNodeName] = useState('');
@@ -670,6 +671,24 @@ export default function ProjectWorkspace() {
     catch (error) { setNotice({ type: 'error', message: (error as Error).message }); }
   }
 
+  async function deleteAttachment(event: FormEvent) {
+    event.preventDefault();
+    if (!attachmentAction || !selected) return;
+    const { name } = attachmentAction;
+    try {
+      await removeAttachment(selected.handle, name);
+      setAttachmentAction(null);
+      setAttachments(await listAttachments(selected.handle));
+      if (root) {
+        const nextTree = await readTree(root);
+        setTree(nextTree);
+        setSelected(findNode(nextTree, selected.path) || nextTree);
+      }
+      setNotice({ type: 'ok', message: `“${name}” 첨부파일을 삭제했습니다.` });
+    }
+    catch (error) { setNotice({ type: 'error', message: `삭제 실패: ${(error as Error).message}` }); }
+  }
+
   async function downloadAttachment(item: Attachment) {
     const url = URL.createObjectURL(await item.handle.getFile());
     const link = document.createElement('a');
@@ -884,7 +903,10 @@ export default function ProjectWorkspace() {
         <div className="attachment-panel">
           <div className="attachment-heading"><strong>첨부파일</strong><Button variant="ghost" size="icon-xs" aria-label="파일 첨부" onClick={() => attachmentInput.current?.click()}><Plus /></Button></div>
           <input ref={attachmentInput} className="sr-only" type="file" multiple onChange={(event) => handleAttachments(event.target.files)} />
-          {attachments.length === 0 ? <p>이 항목에 첨부된 파일이 없습니다.</p> : attachments.map((item) => <button key={item.name} className="attachment-row" title={`${item.name} 다운로드`} onClick={() => downloadAttachment(item)}><File /><span>{item.name}<small>{formatBytes(item.size)}</small></span><Download className="attachment-download" /></button>)}
+          {attachments.length === 0 ? <p>이 항목에 첨부된 파일이 없습니다.</p> : attachments.map((item) => <div key={item.name} className="attachment-row">
+            <button type="button" className="attachment-open" title={`${item.name} 다운로드`} onClick={() => downloadAttachment(item)}><File /><span>{item.name}<small>{formatBytes(item.size)}</small></span><Download className="attachment-download" /></button>
+            <button type="button" className="attachment-delete" aria-label={`${item.name} 삭제`} title="삭제" onClick={() => setAttachmentAction(item)}><Trash2 /></button>
+          </div>)}
         </div>
         </aside>
       </ResizablePanel>
@@ -949,6 +971,8 @@ export default function ProjectWorkspace() {
     </ResizablePanelGroup>
 
     <Dialog open={!!nodeAction} onOpenChange={(open) => !open && setNodeAction(null)}><DialogContent><form onSubmit={submitNodeAction}><DialogHeader><DialogTitle>{nodeAction?.kind === 'add' ? '하위 항목 추가' : nodeAction?.kind === 'rename' ? '이름 변경' : '항목 삭제'}</DialogTitle><DialogDescription>{nodeAction?.kind === 'delete' ? `“${nodeAction.node.name}”과 모든 하위 내용 및 첨부파일을 삭제합니다.` : '트리에 표시할 이름을 입력하세요.'}</DialogDescription></DialogHeader>{nodeAction?.kind !== 'delete' && <Input className="dialog-input" autoFocus value={nodeName} onChange={(event) => setNodeName(event.target.value)} placeholder="새 항목 이름" />}<DialogFooter><Button type="button" variant="outline" onClick={() => setNodeAction(null)}>취소</Button><Button type="submit" variant={nodeAction?.kind === 'delete' ? 'destructive' : 'default'}>{nodeAction?.kind === 'delete' ? '삭제' : '확인'}</Button></DialogFooter></form></DialogContent></Dialog>
+
+    <Dialog open={!!attachmentAction} onOpenChange={(open) => !open && setAttachmentAction(null)}><DialogContent><form onSubmit={deleteAttachment}><DialogHeader><DialogTitle>첨부파일 삭제</DialogTitle><DialogDescription>“{attachmentAction?.name}” 파일을 {selected.name} 폴더에서 삭제합니다. 되돌릴 수 없습니다.</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" onClick={() => setAttachmentAction(null)}>취소</Button><Button type="submit" variant="destructive">삭제</Button></DialogFooter></form></DialogContent></Dialog>
 
     <Dialog open={preferencesOpen} onOpenChange={setPreferencesOpen}><DialogContent className="settings-dialog"><form onSubmit={savePreferences}><DialogHeader><DialogTitle>기본 편집 설정</DialogTitle><DialogDescription>항목을 열 때 적용할 글꼴, 글자 크기, 줄 간격입니다. 문서에서 직접 지정한 서식은 유지됩니다.</DialogDescription></DialogHeader><label className="field-label">기본 글꼴<select className="preference-select" value={preferenceDraft.fontFamily} onChange={(event) => setPreferenceDraft((current) => ({ ...current, fontFamily: event.target.value }))}>{EDITOR_FONTS.map((font) => <option key={font}>{font}</option>)}</select></label><label className="field-label">기본 글자 크기<select className="preference-select" value={preferenceDraft.fontSize} onChange={(event) => setPreferenceDraft((current) => ({ ...current, fontSize: event.target.value }))}>{EDITOR_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}</select></label><label className="field-label">기본 줄 간격<select className="preference-select" value={preferenceDraft.lineHeight} onChange={(event) => setPreferenceDraft((current) => ({ ...current, lineHeight: event.target.value }))}>{EDITOR_LINE_HEIGHTS.map((height) => <option key={height} value={height}>줄 {height}</option>)}</select></label><DialogFooter><Button type="button" variant="outline" onClick={() => setPreferencesOpen(false)}>취소</Button><Button type="submit">저장</Button></DialogFooter></form></DialogContent></Dialog>
 

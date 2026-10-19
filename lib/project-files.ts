@@ -346,6 +346,10 @@ export async function listAttachments(directory: FileSystemDirectoryHandle): Pro
   return items.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 }
 
+export async function removeAttachment(directory: FileSystemDirectoryHandle, name: string) {
+  await directory.removeEntry(name);
+}
+
 export async function addAttachments(directory: FileSystemDirectoryHandle, files: FileList) {
   for (const file of Array.from(files)) {
     const handle = await directory.getFileHandle(file.name, { create: true });
